@@ -89,7 +89,7 @@ public:
         //Equation de la sphère : ||x+c||^2 - r^2 = 0
         //Equation rayon-sphère : t^2 d.d + 2t d.(o-c) + ||o-c||^2 - r^2 = 0
         
-        //Equation Quadratique du second degré en t :
+        //Equation Quadratique du second degré en t : at^2 + bt + c = 0
         //Delta = b^2 - 4ac
         //Avec a = d.d
         //     b = 2.d.(o-c)

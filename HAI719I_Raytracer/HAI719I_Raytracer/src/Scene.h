@@ -130,124 +130,96 @@ public:
         return Ka * globalAmbientLight;
     }
 
-    Vec3 phong (RaySceneIntersection intersectionObjet) {
+    Vec3 phong(RaySceneIntersection intersectionObjet) {
+        Vec3 color(0., 0., 0.);
+        Vec3 ambient(0., 0., 0.);
+        Vec3 ambientColor(0., 0., 0.);
+        Vec3 sommeSpecular(0., 0., 0.);
+        Vec3 sommeDifraction(0., 0., 0.);
 
-        Vec3 color(0.,0.,0.);
-        Vec3 ambient(0.,0.,0.);
-        Vec3 ambientColor(0.,0.,0.);
-        Vec3 sommeSpecular(0.,0.,0.);
-        Vec3 sommeDifraction(0.,0.,0.);
-
-        //Réflexion Ambiante
-        //Isa : intensité de la lumière ambiante
-        //Ka : coeff de reflexion ambiante de l'objet
-        float Isa, Ka;
-        Ka = 0.35;
-
-        //Réflexion Diffuse
-        //Ids : intensité de la lumière diffuse
-        //Kd : coeff de réflexion diffuse du matériau
-        //(L.N) : angle entre la source de lumière et la normale (L et N = vecteurs)
-        float Isd, Kd;
-        Vec3 L(0.,0.,0.);
-        Vec3 N(0.,0.,0.);
-
-        //Réflexion Spéculaire
-        //Iss : intensité de la lumière spéculaire de la source
-        //Ks : coeff de réflexion spéculaire du matériau
-        //(R.V) : angle entre les directions de réflexion et de la vue
-        //n : facteur de brillance (n grand -> brillant, n petit -> mat)
-        float Iss, Ks;
-        Vec3 R(0.,0.,0.);
-        Vec3 V(0.,0.,0.);
-
-        //Point d'intersection entre le rayon et l'objet
-        Vec3 P(0.,0.,0.);
+        // Réflexion Ambiante
+        float Ka = 0.35; // Coefficient de réflexion ambiante
 
         ambientColor = calculateAmbient(Ka);
 
-        //Vérification de l'existence de l'intersection
-        if(intersectionObjet.intersectionExists == false){
-            color = Vec3(0.,0.,0.);
+        if (!intersectionObjet.intersectionExists) {
+            return Vec3(0., 0., 0.); // Pas d'intersection
         }
-        else{
-            //Parcours des sources de lumière
-            for (int i_Light = 0; i_Light < lights.size(); i_Light++){
-                
-                //Vérification du type de l'objet intersecté
-                if (intersectionObjet.typeOfIntersectedObject == SPHERE)
-                {
-                    RaySphereIntersection result_tmp = intersectionObjet.raySphereIntersection;
-                    Sphere sph = spheres[intersectionObjet.objectIndex];
 
-                    P = result_tmp.intersection;
+        //P : Point d'intersection entre le rayon et l'objet
+        //(L.N) : angle entre la source de lumière et la normale
+        //(R.V) : angle entre les directions de réflexion et de la vue
+        Vec3 P, L, N, V, R;
 
-                    L = lights[i_Light].pos - P;
-                    L.normalize();
+        //Parcours des sources de lumière
+        for (int i_Light = 0; i_Light < lights.size(); i_Light++) {
+            Light &light = lights[i_Light];
 
-                    N = result_tmp.normal;
-                    N.normalize();
+            // Calcul des contributions pour chaque type d'objet
+            if (intersectionObjet.typeOfIntersectedObject == SPHERE) {
+                RaySphereIntersection result_tmp = intersectionObjet.raySphereIntersection;
+                Sphere &sph = spheres[intersectionObjet.objectIndex];
 
-                    V = -1. * P;
-                    V.normalize();
+                P = result_tmp.intersection;
+                N = result_tmp.normal;
+                N.normalize();
 
-                    R = 2. * Vec3::dot(N,L) * N - L;
-                    R.normalize();
+            } else if (intersectionObjet.typeOfIntersectedObject == SQUARE) {
+                RaySquareIntersection result_tmp = intersectionObjet.raySquareIntersection;
+                Square &squ = squares[intersectionObjet.objectIndex];
 
-                    //Boucle sur les composantes RGB
-                    for (int i = 0; i < 3; i++)
-                    {
-                        //ambient[i] = Ka * globalAmbientLight[i];
-                        ambient[i] = ambientColor[i];
+                P = result_tmp.intersection;
+                N = result_tmp.normal;
+                N.normalize();
 
-                        Isd = lights[i_Light].material[i];
-                        Kd = sph.material.diffuse_material[i];
+            } else {
+                continue; // Autres types d'objets
+            }
 
-                        Iss = lights[i_Light].material[i];
-                        Ks = sph.material.specular_material[i];
+            L = (light.pos - P); // Direction vers la lumière
+            L.normalize();
 
-                        sommeDifraction[i] += Isd * Kd * Vec3::dot(L, N);
-                        sommeSpecular[i] += Iss * Ks * pow(fmax(0., Vec3::dot(R, V)), sph.material.shininess);
-                    }
+            V = P * -1;           // Direction vers la caméra
+            V.normalize();
+
+            R = (2. * Vec3::dot(N, L) * N - L); // Vecteur réfléchi
+            R.normalize();
+
+            // Vérifie si le point P est dans l'ombre de la lumière
+            Ray shadowRay(P + N * 0.001, L); // Rayon légèrement décalé pour éviter l'autointersection
+            RaySceneIntersection shadowIntersection = computeIntersection(shadowRay);
+
+            if (shadowIntersection.intersectionExists && 
+                shadowIntersection.t < (light.pos - P).length()) {
+                // Si un objet bloque la lumière, ignorer les contributions diffuse et spéculaire
+                continue;
+            }
+
+            for (int i = 0; i < 3; i++) {
+                float Isd = light.material[i]; // Intensité de la lumière diffuse
+                float Kd, Ks; // Coefficients de réflexion diffuse et spéculaire
+                float shininess;
+
+                if (intersectionObjet.typeOfIntersectedObject == SPHERE) {
+                    Sphere &sph = spheres[intersectionObjet.objectIndex];
+                    Kd = sph.material.diffuse_material[i];
+                    Ks = sph.material.specular_material[i];
+                    shininess = sph.material.shininess;
+
+                } else if (intersectionObjet.typeOfIntersectedObject == SQUARE) {
+                    Square &squ = squares[intersectionObjet.objectIndex];
+                    Kd = squ.material.diffuse_material[i];
+                    Ks = squ.material.specular_material[i];
+                    shininess = squ.material.shininess;
                 }
-                else if (intersectionObjet.typeOfIntersectedObject == SQUARE)
-                {
-                    RaySquareIntersection result_tmp = intersectionObjet.raySquareIntersection;
-                    Square squ = squares[intersectionObjet.objectIndex];
 
-                    P = result_tmp.intersection;
-
-                    L = lights[i_Light].pos - P;
-                    L.normalize();
-
-                    N = result_tmp.normal;
-                    N.normalize();
-
-                    V = -1. * P;
-                    V.normalize();
-
-                    R = 2. * Vec3::dot(N, L) * N - L;
-                    R.normalize();
-
-                    for (int i = 0; i < 3; i++) {
-                        //ambient[i] = Ka * globalAmbientLight[i];
-                        ambient[i] = ambientColor[i];
-
-                        Isd = lights[i_Light].material[i];
-                        Kd = squ.material.diffuse_material[i];
-
-                        Iss = lights[i_Light].material[i];
-                        Ks = squ.material.specular_material[i];
-
-                        sommeDifraction[i] += Isd * Kd * Vec3::dot(L, N);
-                        sommeSpecular[i] += Iss * Ks * pow(fmax(0., Vec3::dot(R, V)), squ.material.shininess);
-                    }
-                }
+                sommeDifraction[i] += Isd * Kd * std::max(0.f, Vec3::dot(L, N));
+                sommeSpecular[i] += Isd * Ks * pow(std::max(0.f, Vec3::dot(R, V)), shininess);
             }
         }
 
         for (int i = 0; i < 3; i++) {
-            color[i] = ambient[i] + sommeDifraction[i] + sommeSpecular[i];
+            color[i] = ambientColor[i] + sommeDifraction[i] + sommeSpecular[i];
         }
 
         return color;
@@ -256,8 +228,7 @@ public:
 
     Vec3 rayTraceRecursive( Ray ray , int NRemainingBounces ) {
         Vec3 color;
-        //TODO RaySceneIntersection raySceneIntersection = computeIntersection(ray);
-        
+    
         //Calcule de l'intersection avec la scène
         RaySceneIntersection raySceneIntersection = computeIntersection(ray);
         
@@ -385,7 +356,7 @@ public:
         squares.clear();
         lights.clear();
 
-        {
+        { //Light
             lights.resize( lights.size() + 1 );
             Light & light = lights[lights.size() - 1];
             light.pos = Vec3( 0.0, 1.5, 0.0 );
@@ -393,6 +364,17 @@ public:
             light.powerCorrection = 2.f;
             light.type = LightType_Spherical;
             light.material = Vec3(1,1,1);
+            light.isInCamSpace = false;
+        }
+
+        { //Light 2
+            lights.resize( lights.size() + 1 );
+            Light & light = lights[lights.size() - 1];
+            light.pos = Vec3( -1.9, -1.9, 1.9 );
+            light.radius = 2.5f;
+            light.powerCorrection = 2.f;
+            light.type = LightType_Spherical;
+            light.material = Vec3(1.,0.,0.);
             light.isInCamSpace = false;
         }
 
