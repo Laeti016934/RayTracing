@@ -42,6 +42,29 @@ struct Light {
 
 };
 
+void initialize_quad_light(Light &light, float width, float height) {
+    if (light.type != LightType_Quad) {
+        std::cerr << "La lumière doit être de type Quad pour utiliser cette fonction." << std::endl;
+        return;
+    }
+
+    float halfWidth = width * 0.5f;
+    float halfHeight = height * 0.5f;
+
+    light.quad.vertices.clear();
+    light.quad.vertices.push_back(MeshVertex(light.pos + Vec3(-halfWidth, -halfHeight, 0), Vec3(0, 0, 1))); // Bas gauche
+    light.quad.vertices.push_back(MeshVertex(light.pos + Vec3(halfWidth, -halfHeight, 0), Vec3(0, 0, 1)));  // Bas droit
+    light.quad.vertices.push_back(MeshVertex(light.pos + Vec3(halfWidth, halfHeight, 0), Vec3(0, 0, 1)));   // Haut droit
+    light.quad.vertices.push_back(MeshVertex(light.pos + Vec3(-halfWidth, halfHeight, 0), Vec3(0, 0, 1)));  // Haut gauche
+
+    light.quad.triangles.clear();
+    light.quad.triangles.push_back(MeshTriangle(0, 1, 2)); // Triangle 1
+    light.quad.triangles.push_back(MeshTriangle(0, 2, 3)); // Triangle 2
+
+    light.quad.build_arrays();
+}
+
+
 struct RaySceneIntersection{
     bool intersectionExists;
     unsigned int typeOfIntersectedObject;
@@ -126,9 +149,37 @@ public:
         return result;
     }
 
+    Vec3 samplePointOnLight(const Light &light) {
+        if (light.type != LightType_Quad) {
+            std::cerr << "Échantillonnage impossible : la lumière n'est pas de type Quad." << std::endl;
+            return light.pos; // Retourne simplement la position pour les autres types de lumière.
+        }
+
+        // Générer des coordonnées barycentriques aléatoires
+        float u = static_cast<float>(rand()) / RAND_MAX;
+        float v = static_cast<float>(rand()) / RAND_MAX;
+
+        // Assurer que u + v <= 1 pour le premier triangle
+        if (u + v > 1.0f) {
+            u = 1.0f - u;
+            v = 1.0f - v;
+        }
+
+        const Mesh &quad = light.quad;
+
+        // Calculer la position interpolée dans le triangle (0, 1, 2)
+        Vec3 p0 = quad.vertices[quad.triangles[0][0]].position;
+        Vec3 p1 = quad.vertices[quad.triangles[0][1]].position;
+        Vec3 p2 = quad.vertices[quad.triangles[0][2]].position;
+
+        return (1 - u - v) * p0 + u * p1 + v * p2;
+    }
+
+
     Vec3 calculateAmbient(float Ka) {
         return Ka * globalAmbientLight;
     }
+
 
     Vec3 phong(RaySceneIntersection intersectionObjet) {
         Vec3 color(0., 0., 0.);
@@ -139,19 +190,18 @@ public:
 
         // Réflexion Ambiante
         float Ka = 0.35; // Coefficient de réflexion ambiante
-
         ambientColor = calculateAmbient(Ka);
 
         if (!intersectionObjet.intersectionExists) {
             return Vec3(0., 0., 0.); // Pas d'intersection
         }
 
-        //P : Point d'intersection entre le rayon et l'objet
+        // P : Point d'intersection entre le rayon et l'objet
         //(L.N) : angle entre la source de lumière et la normale
         //(R.V) : angle entre les directions de réflexion et de la vue
         Vec3 P, L, N, V, R;
 
-        //Parcours des sources de lumière
+        // Parcours des sources de lumière
         for (int i_Light = 0; i_Light < lights.size(); i_Light++) {
             Light &light = lights[i_Light];
 
@@ -176,48 +226,117 @@ public:
                 continue; // Autres types d'objets
             }
 
-            L = (light.pos - P); // Direction vers la lumière
-            L.normalize();
+            // Pour les lumières de type Quad, utiliser samplePointOnLight()
+            if (light.type == LightType_Quad) {
+                Vec3 summedColor(0.0f, 0.0f, 0.0f);
+                int numSamples = 16; // Nombre d'échantillons pour la lumière étendue
 
-            V = P * -1;           // Direction vers la caméra
-            V.normalize();
+                // Moyenne des échantillons pour simuler des ombres douces
+                for (int i = 0; i < numSamples; ++i) {
+                    // Échantillonner un point sur la lumière
+                    Vec3 sampledLightPosition = samplePointOnLight(light);
 
-            R = (2. * Vec3::dot(N, L) * N - L); // Vecteur réfléchi
-            R.normalize();
+                    // Calculer la direction de la lumière
+                    L = (sampledLightPosition - P);
+                    L.normalize();
 
-            // Vérifie si le point P est dans l'ombre de la lumière
-            Ray shadowRay(P + N * 0.001, L); // Rayon légèrement décalé pour éviter l'autointersection
-            RaySceneIntersection shadowIntersection = computeIntersection(shadowRay);
+                    // Calculer la direction vers la caméra
+                    V = P * -1;
+                    V.normalize();
 
-            if (shadowIntersection.intersectionExists && 
-                shadowIntersection.t < (light.pos - P).length()) {
-                // Si un objet bloque la lumière, ignorer les contributions diffuse et spéculaire
-                continue;
-            }
+                    // Calculer la direction réfléchie
+                    R = (2. * Vec3::dot(N, L) * N - L);
+                    R.normalize();
 
-            for (int i = 0; i < 3; i++) {
-                float Isd = light.material[i]; // Intensité de la lumière diffuse
-                float Kd, Ks; // Coefficients de réflexion diffuse et spéculaire
-                float shininess;
+                    // Vérifier l'ombre pour ce point échantillonné
+                    Ray shadowRay(P + N * 0.001, L); // Rayon légèrement décalé pour éviter l'autointersection
+                    RaySceneIntersection shadowIntersection = computeIntersection(shadowRay);
 
-                if (intersectionObjet.typeOfIntersectedObject == SPHERE) {
-                    Sphere &sph = spheres[intersectionObjet.objectIndex];
-                    Kd = sph.material.diffuse_material[i];
-                    Ks = sph.material.specular_material[i];
-                    shininess = sph.material.shininess;
+                    if (shadowIntersection.intersectionExists &&
+                        shadowIntersection.t < (sampledLightPosition - P).length()) {
+                        // Si un objet bloque la lumière, ignorer cette contribution
+                        continue;
+                    }
 
-                } else if (intersectionObjet.typeOfIntersectedObject == SQUARE) {
-                    Square &squ = squares[intersectionObjet.objectIndex];
-                    Kd = squ.material.diffuse_material[i];
-                    Ks = squ.material.specular_material[i];
-                    shininess = squ.material.shininess;
+                    // Ajouter la contribution diffuse et spéculaire pour ce point échantillonné
+                    for (int i = 0; i < 3; i++) {
+                        float Isd = light.material[i]; // Intensité de la lumière diffuse
+                        float Kd, Ks; // Coefficients de réflexion diffuse et spéculaire
+                        float shininess;
+
+                        if (intersectionObjet.typeOfIntersectedObject == SPHERE) {
+                            Sphere &sph = spheres[intersectionObjet.objectIndex];
+                            Kd = sph.material.diffuse_material[i];
+                            Ks = sph.material.specular_material[i];
+                            shininess = sph.material.shininess;
+
+                        } else if (intersectionObjet.typeOfIntersectedObject == SQUARE) {
+                            Square &squ = squares[intersectionObjet.objectIndex];
+                            Kd = squ.material.diffuse_material[i];
+                            Ks = squ.material.specular_material[i];
+                            shininess = squ.material.shininess;
+                        }
+
+                        summedColor[i] += Isd * Kd * std::max(0.f, Vec3::dot(L, N));
+                        summedColor[i] += Isd * Ks * pow(std::max(0.f, Vec3::dot(R, V)), shininess);
+                    }
                 }
 
-                sommeDifraction[i] += Isd * Kd * std::max(0.f, Vec3::dot(L, N));
-                sommeSpecular[i] += Isd * Ks * pow(std::max(0.f, Vec3::dot(R, V)), shininess);
+                // Moyenne des contributions de la lumière étendue
+                summedColor /= numSamples;
+
+                // Ajouter la couleur calculée à la couleur finale
+                for (int i = 0; i < 3; i++) {
+                    sommeDifraction[i] += summedColor[i];
+                    sommeSpecular[i] += summedColor[i];
+                }
+
+            } else {
+                // Pour les lumières ponctuelles (Spherical)
+                L = (light.pos - P);
+                L.normalize();
+
+                V = P * -1; // Direction vers la caméra
+                V.normalize();
+
+                R = (2. * Vec3::dot(N, L) * N - L); // Vecteur réfléchi
+                R.normalize();
+
+                // Vérifie si le point P est dans l'ombre de la lumière
+                Ray shadowRay(P + N * 0.001, L); // Rayon légèrement décalé pour éviter l'autointersection
+                RaySceneIntersection shadowIntersection = computeIntersection(shadowRay);
+
+                if (shadowIntersection.intersectionExists && 
+                    shadowIntersection.t < (light.pos - P).length()) {
+                    // Si un objet bloque la lumière, ignorer les contributions diffuse et spéculaire
+                    continue;
+                }
+
+                for (int i = 0; i < 3; i++) {
+                    float Isd = light.material[i]; // Intensité de la lumière diffuse
+                    float Kd, Ks; // Coefficients de réflexion diffuse et spéculaire
+                    float shininess;
+
+                    if (intersectionObjet.typeOfIntersectedObject == SPHERE) {
+                        Sphere &sph = spheres[intersectionObjet.objectIndex];
+                        Kd = sph.material.diffuse_material[i];
+                        Ks = sph.material.specular_material[i];
+                        shininess = sph.material.shininess;
+
+                    } else if (intersectionObjet.typeOfIntersectedObject == SQUARE) {
+                        Square &squ = squares[intersectionObjet.objectIndex];
+                        Kd = squ.material.diffuse_material[i];
+                        Ks = squ.material.specular_material[i];
+                        shininess = squ.material.shininess;
+                    }
+
+                    sommeDifraction[i] += Isd * Kd * std::max(0.f, Vec3::dot(L, N));
+                    sommeSpecular[i] += Isd * Ks * pow(std::max(0.f, Vec3::dot(R, V)), shininess);
+                }
             }
         }
 
+        // Finalisation de la couleur
         for (int i = 0; i < 3; i++) {
             color[i] = ambientColor[i] + sommeDifraction[i] + sommeSpecular[i];
         }
@@ -356,6 +475,20 @@ public:
         squares.clear();
         lights.clear();
 
+    // Lumière de type Quad
+    {
+        lights.resize(lights.size() + 1);
+        Light &light = lights.back();
+        light.pos = Vec3(0., 1.5, 0.);
+        light.type = LightType_Quad;
+        light.material = Vec3(1, 1, 1);
+        light.isInCamSpace = false;
+
+        // Initialiser la géométrie du quad
+        initialize_quad_light(light, 4.0f, 4.0f); // Taille 4x4
+    }
+
+/*
         { //Light
             lights.resize( lights.size() + 1 );
             Light & light = lights[lights.size() - 1];
@@ -377,7 +510,7 @@ public:
             light.material = Vec3(1.,0.,0.);
             light.isInCamSpace = false;
         }
-
+*/
         { //Back Wall
             squares.resize( squares.size() + 1 );
             Square & s = squares[squares.size() - 1];
