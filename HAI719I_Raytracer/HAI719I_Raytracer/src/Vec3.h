@@ -84,6 +84,14 @@ public:
         res[c2] = -mVals[c1];
         return res;
     }
+    static Vec3 clamp(const Vec3& v, float minVal, float maxVal) {
+        
+        std::fmin(std::fmax(v[0], minVal), maxVal);
+        std::fmin(std::fmax(v[1], minVal), maxVal);
+        std::fmin(std::fmax(v[2], minVal), maxVal);
+        return v;
+    }
+
 };
 
 static inline Vec3 operator + (Vec3 const & a , Vec3 const & b) {
