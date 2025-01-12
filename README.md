@@ -1,1 +1,4 @@
-# RayTraycing
+# Ray Tracing
+
+make -j
+./main
