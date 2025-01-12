@@ -1,4 +1,4 @@
 # Ray Tracing
 
-make -j
-./main
+make -j  
+./main  
