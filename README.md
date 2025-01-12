@@ -1,6 +1,6 @@
-## Ray Tracing
+# Ray Tracing
 
-# Program Execution Steps  
+## Program Execution Steps  
   
 make -j  
 ./main  
