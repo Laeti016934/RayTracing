@@ -5,4 +5,4 @@
 make -j  
 ./main  
   
-Press R to start rendering  
+Press R to start rendering (it may take several seconds)  
