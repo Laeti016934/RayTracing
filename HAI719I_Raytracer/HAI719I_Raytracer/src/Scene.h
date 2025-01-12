@@ -14,7 +14,7 @@
 
 using namespace std;
 
-const int MESHE = 0;
+const int MESH = 0;
 const int SPHERE = 1;
 const int SQUARE = 2;
 
@@ -181,6 +181,151 @@ public:
     }
 
 
+    void getMaterialProperties(int objectType, int objectIndex, int channel, float &Kd, float &Ks, float &shininess) {
+        if (objectType == SPHERE) {
+            Sphere &sph = spheres[objectIndex];
+            Kd = sph.material.diffuse_material[channel];
+            Ks = sph.material.specular_material[channel];
+            shininess = sph.material.shininess;
+        } else if (objectType == SQUARE) {
+            Square &squ = squares[objectIndex];
+            Kd = squ.material.diffuse_material[channel];
+            Ks = squ.material.specular_material[channel];
+            shininess = squ.material.shininess;
+        } else if (objectType == MESH) {
+            Mesh &mesh = meshes[objectIndex];
+            Material material = mesh.material;
+            Kd = material.diffuse_material[channel];
+            Ks = material.specular_material[channel];
+            shininess = material.shininess;
+        }
+    }
+
+
+    void computeLightContribution(Vec3 &summedColor, Light &light, Vec3 &P, Vec3 &N, Vec3 &V, Vec3 &L, int objectType, int objectIndex) {
+        Vec3 R = (2. * Vec3::dot(N, L) * N - L);
+        R.normalize();
+
+        for (int i = 0; i < 3; i++) {
+            float Kd, Ks, shininess;
+            getMaterialProperties(objectType, objectIndex, i, Kd, Ks, shininess);
+
+            float Isd = light.material[i];
+            summedColor[i] += Isd * Kd * std::max(0.f, Vec3::dot(L, N));
+            summedColor[i] += Isd * Ks * pow(std::max(0.f, Vec3::dot(R, V)), shininess);
+        }
+    }
+
+
+    Vec3 phong(RaySceneIntersection intersectionObjet) {
+        Vec3 color(0., 0., 0.);
+        Vec3 ambientColor(0., 0., 0.);
+        Vec3 sommeSpecular(0., 0., 0.);
+        Vec3 sommeDiffuse(0., 0., 0.);
+
+        // Réflexion Ambiante
+        float Ka = 0.35; // Coefficient de réflexion ambiante
+        ambientColor = calculateAmbient(Ka);
+
+        if (!intersectionObjet.intersectionExists) {
+            return Vec3(0., 0., 0.); // Pas d'intersection
+        }
+
+        Vec3 P, L, N, V;
+
+        for (int i_Light = 0; i_Light < lights.size(); i_Light++) {
+            Light &light = lights[i_Light];
+
+            // Récupération des informations en fonction du type d'objet intersecté
+            if (intersectionObjet.typeOfIntersectedObject == SPHERE) {
+                RaySphereIntersection result_tmp = intersectionObjet.raySphereIntersection;
+                Sphere &sph = spheres[intersectionObjet.objectIndex];
+                P = result_tmp.intersection;
+                N = result_tmp.normal;
+                N.normalize();
+
+            } else if (intersectionObjet.typeOfIntersectedObject == SQUARE) {
+                RaySquareIntersection result_tmp = intersectionObjet.raySquareIntersection;
+                Square &squ = squares[intersectionObjet.objectIndex];
+                P = result_tmp.intersection;
+                N = result_tmp.normal;
+                N.normalize();
+
+            } else if (intersectionObjet.typeOfIntersectedObject == MESH) {
+                RayTriangleIntersection result_tmp = intersectionObjet.rayMeshIntersection;
+                Mesh &mesh = meshes[intersectionObjet.objectIndex];
+                P = result_tmp.intersection;
+                N = result_tmp.normal;
+                N.normalize();
+
+            } else {
+                continue; // Type d'objet non géré
+            }
+
+            if (light.type == LightType_Quad) {
+                // Lumière étendue (Quad)
+                Vec3 summedColor(0.0f, 0.0f, 0.0f);
+                int numSamples = 16; // Échantillonnage Monte Carlo
+
+                for (int i = 0; i < numSamples; ++i) {
+                    Vec3 sampledLightPosition = samplePointOnLight(light);
+                    L = (sampledLightPosition - P);
+                    L.normalize();
+
+                    V = P * -1;
+                    V.normalize();
+
+                    // Vérifier l'ombre pour ce point échantillonné
+                    Ray shadowRay(P + N * 0.001, L);
+                    RaySceneIntersection shadowIntersection = computeIntersection(shadowRay);
+
+                    if (shadowIntersection.intersectionExists &&
+                        shadowIntersection.t < (sampledLightPosition - P).length()) {
+                        continue; // Rayon bloqué par un objet
+                    }
+
+                    computeLightContribution(summedColor, light, P, N, V, L, 
+                                            intersectionObjet.typeOfIntersectedObject, intersectionObjet.objectIndex);
+                }
+
+                summedColor /= numSamples; // Moyenne des échantillons
+
+                // Ajouter la couleur calculée
+                sommeDiffuse += summedColor;
+                sommeSpecular += summedColor;
+
+            } else {
+                // Lumière ponctuelle
+                L = (light.pos - P);
+                L.normalize();
+
+                V = P * -1;
+                V.normalize();
+
+                // Vérifier si le point est dans l'ombre
+                Ray shadowRay(P + N * 0.001, L);
+                RaySceneIntersection shadowIntersection = computeIntersection(shadowRay);
+
+                if (shadowIntersection.intersectionExists && 
+                    shadowIntersection.t < (light.pos - P).length()) {
+                    continue; // Rayon bloqué par un objet
+                }
+
+                computeLightContribution(sommeDiffuse, light, P, N, V, L, 
+                                        intersectionObjet.typeOfIntersectedObject, intersectionObjet.objectIndex);
+            }
+        }
+
+        // Finalisation de la couleur
+        color = ambientColor + sommeDiffuse + sommeSpecular;
+
+        return color;
+    }
+
+
+
+
+/*
     Vec3 phong(RaySceneIntersection intersectionObjet) {
         Vec3 color(0., 0., 0.);
         Vec3 ambient(0., 0., 0.);
@@ -343,13 +488,8 @@ public:
 
         return color;
     }
+*/
 
-    // Approximation rapide du coefficient de réflexion de Fresnel pour un rayon lumineux frappant une surface
-    float schlick(float cosi, float etai, float etat) {
-        float r0 = (etai - etat) / (etai + etat);
-        r0 = r0 * r0;
-        return r0 + (1.0f - r0) * powf(1.0f - cosi, 5.0f);
-    }
 
     Vec3 rayTraceRecursive( Ray ray , int NRemainingBounces ) {
         Vec3 color;
@@ -391,14 +531,14 @@ public:
 
                 Sphere &sph = spheres[raySceneIntersection.objectIndex];
 
+                Vec3 P = raySceneIntersection.raySphereIntersection.intersection; // Point d'intersection
+                Vec3 N = raySceneIntersection.raySphereIntersection.normal;       // Normale à la surface
+                Vec3 I = ray.direction();                                         // Direction du rayon incident
+
                 if (sph.material.type == Material_Mirror) {
-                    // Calcule la direction du rayon réfléchi
-                    Vec3 P = raySceneIntersection.raySphereIntersection.intersection; // Point d'intersection
-                    Vec3 N = raySceneIntersection.raySphereIntersection.normal; // Normale à la surface
-                    Vec3 I = ray.direction(); // Direction du rayon d'incidence
+
                     Vec3 R = I - 2.0f * Vec3::dot(I, N) * N; // Direction du rayon réfléchi
 
-                    // Crée un nouveau rayon réfléchi
                     Ray reflectedRay(P + N * 0.001f, R); // Déplace légèrement le point d'intersection pour éviter les auto-intersections
 
                     // Appelle récursivement la fonction rayTrace pour obtenir la couleur réfléchie
@@ -414,42 +554,54 @@ public:
                     color = Vec3::clamp(color, 0.0f, 1.0f);
                 }
 
-                // Si l'objet a un matériau de type verre (réfractant)
                 if (sph.material.type == Material_Glass) {
-                    Vec3 P = raySceneIntersection.raySphereIntersection.intersection;  // Point d'intersection
-                    Vec3 N = raySceneIntersection.raySphereIntersection.normal;        // Normale à la surface
-                    Vec3 I = ray.direction();                                           // Direction du rayon d'incidence
+                    Vec3 P = raySceneIntersection.raySphereIntersection.intersection; // Point d'intersection
+                    Vec3 N = raySceneIntersection.raySphereIntersection.normal; // Normale
+                    Vec3 I = ray.direction(); // Direction incidente
 
-                    // Calcul du rayon réfléchi (loi de réflexion)
-                    Vec3 R = I - 2.0f * Vec3::dot(I, N) * N; // Direction du rayon réfléchi
-                    Ray reflectedRay(P + N * 0.001f, R);     // Rayon réfléchi
+                    // Indices de réfraction
+                    float n1 = 1.0f; // Air
+                    float n2 = sph.material.index_medium; // Indice du verre
 
-                    // Calcul du rayon réfracté (loi de Snell)
-                    float ior = 1.5f; // Indice de réfraction du verre
-                    float cosi = std::fmin(std::fmax(Vec3::dot(I, N), -1.0f), 1.0f); // Cosinus de l'angle d'incidence
-                    float eta = 1.0f / ior; // Rapport des indices de réfraction
-
-                    float k = 1.0f - eta * eta * (1.0f - cosi * cosi);
-                    Vec3 refractedRayDir = Vec3(0.0f, 0.0f, 0.0f);
-                    
-                    if (k > 0.0f) {
-                        refractedRayDir = eta * I + (eta * cosi - sqrtf(k)) * N; // Direction du rayon réfracté
+                    // Si le rayon est sortant, inverser les indices et la normale
+                    if (Vec3::dot(I, N) > 0.0f) {
+                        std::swap(n1, n2);
+                        N = N * -1.0f; // Inverser manuellement la normale
                     }
 
-                    // Création du rayon réfracté
-                    Ray refractedRay(P - N * 0.001f, refractedRayDir);
+                    // Calcul des coefficients de Fresnel
+                    float cosI = fabs(Vec3::dot(I, N));
+                    float sinT2 = (n1 / n2) * (n1 / n2) * (1.0f - cosI * cosI);
+                    float fresnelReflectance;
 
-                    // Calcul des couleurs réfléchie et réfractée
+                    if (sinT2 > 1.0f) {
+                        // Réflexion totale interne
+                        fresnelReflectance = 1.0f;
+                    } else {
+                        float cosT = sqrt(1.0f - sinT2);
+                        float Rs = pow((n1 * cosI - n2 * cosT) / (n1 * cosI + n2 * cosT), 2);
+                        float Rp = pow((n1 * cosT - n2 * cosI) / (n1 * cosT + n2 * cosI), 2);
+                        fresnelReflectance = (Rs + Rp) / 2.0f;
+                    }
+
+                    // Rayon réfléchi
+                    Vec3 R = I - 2.0f * Vec3::dot(I, N) * N; // Direction réfléchie
+                    Ray reflectedRay(P + N * 0.001f, R); // Déplacement pour éviter les auto-intersections
                     Vec3 reflectedColor = rayTraceRecursive(reflectedRay, NRemainingBounces - 1);
-                    Vec3 refractedColor = rayTraceRecursive(refractedRay, NRemainingBounces - 1);
 
-                    // Coefficient de Fresnel
-                    float fresnel = schlick(cosi, 1.0f, ior);
+                    // Rayon réfracté (si pas de réflexion totale interne)
+                    Vec3 refractedColor(0.0f, 0.0f, 0.0f);
+                    if (fresnelReflectance < 1.0f) {
+                        Vec3 T = (I - N * cosI) * (n1 / n2) - N * sqrt(1.0f - sinT2); // Direction réfractée
+                        Ray refractedRay(P - N * 0.001f, T); // Déplacement léger vers l'intérieur
+                        refractedColor = rayTraceRecursive(refractedRay, NRemainingBounces - 1);
+                    }
 
-                    // Pondération de la réflexion et de la réfraction selon le coefficient de Fresnel
-                    color = reflectedColor * fresnel + refractedColor * (1.0f - fresnel);
-                    color = Vec3::clamp(color, 0.0f, 1.0f);
+                    // Combiner les couleurs
+                    color = fresnelReflectance * reflectedColor + (1.0f - fresnelReflectance) * refractedColor;
+                    color = Vec3::clamp(color, 0.0f, 1.0f); // Éviter les dépassements
                 }
+
             }
         }
 
@@ -546,6 +698,200 @@ public:
             s.material.shininess = 20;
         }
     }
+
+    void setup_cornell_box_meshes(){
+        meshes.clear();
+        spheres.clear();
+        squares.clear();
+        lights.clear();
+
+
+        // Lumière de type Quad
+        {
+            lights.resize(lights.size() + 1);
+            Light &light = lights.back();
+            light.pos = Vec3(0., 1.5, 0.);
+            light.type = LightType_Quad;
+            light.material = Vec3(1, 1, 1);
+            light.isInCamSpace = false;
+
+            // Initialiser la géométrie du quad
+            initialize_quad_light(light, 4.0f, 4.0f); // Taille 4x4
+        }
+
+    /*
+        { //Light
+            lights.resize( lights.size() + 1 );
+            Light & light = lights[lights.size() - 1];
+            light.pos = Vec3( 0.0, 1.5, 0.0 );
+            light.radius = 2.5f;
+            light.powerCorrection = 2.f;
+            light.type = LightType_Spherical;
+            light.material = Vec3(1,1,1);
+            light.isInCamSpace = false;
+        }
+
+        { //Light 2
+            lights.resize( lights.size() + 1 );
+            Light & light = lights[lights.size() - 1];
+            light.pos = Vec3( -1.9, -1.9, 1.9 );
+            light.radius = 2.5f;
+            light.powerCorrection = 2.f;
+            light.type = LightType_Spherical;
+            light.material = Vec3(1.,0.,0.);
+            light.isInCamSpace = false;
+        }
+    */
+        { //Back Wall
+            squares.resize( squares.size() + 1 );
+            Square & s = squares[squares.size() - 1];
+            s.setQuad(Vec3(-1., -1., 0.), Vec3(1., 0, 0.), Vec3(0., 1, 0.), 2., 2.);
+            s.scale(Vec3(2., 2., 1.));
+            s.translate(Vec3(0., 0., -2.));
+            s.build_arrays();
+            s.material.diffuse_material = Vec3( 1.,0.5,0. );
+            s.material.specular_material = Vec3( 1.,1.,1. );
+            s.material.shininess = 16;
+        }
+
+        { //Left Wall
+
+            squares.resize( squares.size() + 1 );
+            Square & s = squares[squares.size() - 1];
+            s.setQuad(Vec3(-1., -1., 0.), Vec3(1., 0, 0.), Vec3(0., 1, 0.), 2., 2.);
+            s.scale(Vec3(2., 2., 1.));
+            s.translate(Vec3(0., 0., -2.));
+            s.rotate_y(90);
+            s.build_arrays();
+            s.material.diffuse_material = Vec3( 1.,0.,0. );
+            s.material.specular_material = Vec3( 1.,0.,0. );
+            s.material.shininess = 16;
+        }
+
+        { //Right Wall
+            squares.resize( squares.size() + 1 );
+            Square & s = squares[squares.size() - 1];
+            s.setQuad(Vec3(-1., -1., 0.), Vec3(1., 0, 0.), Vec3(0., 1, 0.), 2., 2.);
+            s.translate(Vec3(0., 0., -2.));
+            s.scale(Vec3(2., 2., 1.));
+            s.rotate_y(-90);
+            s.build_arrays();
+            s.material.diffuse_material = Vec3( 0.0,1.0,0.0 );
+            s.material.specular_material = Vec3( 0.0,1.0,0.0 );
+            s.material.shininess = 16;
+        }
+
+        { //Floor
+            squares.resize( squares.size() + 1 );
+            Square & s = squares[squares.size() - 1];
+            s.setQuad(Vec3(-1., -1., 0.), Vec3(1., 0, 0.), Vec3(0., 1, 0.), 2., 2.);
+            s.translate(Vec3(0., 0., -2.));
+            s.scale(Vec3(2., 2., 1.));
+            s.rotate_x(-90);
+            s.build_arrays();
+            s.material.diffuse_material = Vec3( 0.5,0.5,1.0 );
+            s.material.specular_material = Vec3( 1.0,1.0,1.0 );
+            s.material.shininess = 16;
+        }
+
+        { //Ceiling
+            squares.resize( squares.size() + 1 );
+            Square & s = squares[squares.size() - 1];
+            s.setQuad(Vec3(-1., -1., 0.), Vec3(1., 0, 0.), Vec3(0., 1, 0.), 2., 2.);
+            s.translate(Vec3(0., 0., -2.));
+            s.scale(Vec3(2., 2., 1.));
+            s.rotate_x(90);
+            s.build_arrays();
+            s.material.diffuse_material = Vec3( 0.0,0.,1.0 );
+            s.material.specular_material = Vec3( 1.0,1.0,1.0 );
+            s.material.shininess = 16;
+        }
+        
+        /*
+        { //Front Wall
+            squares.resize( squares.size() + 1 );
+            Square & s = squares[squares.size() - 1];
+            s.setQuad(Vec3(-1., -1., 0.), Vec3(1., 0, 0.), Vec3(0., 1, 0.), 2., 2.);
+            s.translate(Vec3(0., 0., -6.5));
+            s.scale(Vec3(100., 100., 1.));
+            s.rotate_y(180);
+            s.build_arrays();
+            s.material.diffuse_material = Vec3( 1.0,1.0,1.0 );
+            s.material.specular_material = Vec3( 1.0,1.0,1.0 );
+            s.material.shininess = 16;
+        }
+        */
+        
+        /*
+        { //MIRRORED Sphere
+
+            spheres.resize( spheres.size() + 1 );
+            Sphere & s = spheres[spheres.size() - 1];
+            s.m_center = Vec3(1.0, -1.25, 0.5);
+            s.m_radius = 0.75f;
+            s.build_arrays();
+            s.material.type = Material_Mirror;
+            s.material.diffuse_material = Vec3( 1.,1.,1. );
+            s.material.specular_material = Vec3( 1.,1.,1. );
+            s.material.shininess = 16;
+            s.material.transparency = 1.0;
+            s.material.index_medium = 1.4;
+        }
+
+
+        { //GLASS Sphere
+            spheres.resize( spheres.size() + 1 );
+            Sphere & s = spheres[spheres.size() - 1];
+            s.m_center = Vec3(-1.0, -1.25, -0.5);
+            s.m_radius = 0.75f;
+            s.build_arrays();
+            s.material.type = Material_Glass;
+            s.material.diffuse_material = Vec3( 1.,1.,1. );
+            s.material.specular_material = Vec3(  1.,1.,1. );
+            s.material.shininess = 16;
+            s.material.transparency = 0.9;
+            s.material.index_medium = 1.5;
+        }
+        */
+
+        // Chargement du fichier OFF
+        {
+            meshes.resize(meshes.size() + 1);
+            Mesh &mesh = meshes.back();
+
+            // Chemin vers le fichier OFF
+            std::string offFilePath = "img/star.off";
+
+            // Chargement du fichier OFF
+            mesh.loadOFF(offFilePath);
+
+            // Recentrez et mettez à l'échelle le maillage
+            mesh.centerAndScaleToUnit();
+
+            // Recalculez les normales des sommets
+            mesh.recomputeNormals();
+
+            // Trouver la hauteur minimale du maillage (axe Y)
+            float minY = std::numeric_limits<float>::max();
+            for (const auto &vertex : mesh.vertices) {
+                if (vertex.position[1] < minY) {
+                    minY = vertex.position[1];
+                }
+            }
+
+            // Appliquer une translation verticale pour aligner le maillage sur le sol (y = 0)
+            Vec3 translation(0.0, -minY - 1.8, 0.0);
+            for (auto &vertex : mesh.vertices) {
+                vertex.position += translation;
+            }
+            
+            std::cout << "Maillage chargé : " << offFilePath << std::endl;
+            //std::cout << "Maillage chargé, recentré et positionné sur le sol : " << offFilePath << std::endl;
+        }
+
+    }
+
+
 
     void setup_cornell_box(){
         meshes.clear();
@@ -670,6 +1016,7 @@ public:
         }
         */
         
+        
         { //MIRRORED Sphere
 
             spheres.resize( spheres.size() + 1 );
@@ -696,46 +1043,11 @@ public:
             s.material.diffuse_material = Vec3( 1.,1.,1. );
             s.material.specular_material = Vec3(  1.,1.,1. );
             s.material.shininess = 16;
-            s.material.transparency = 1.0;
-            s.material.index_medium = 1.4;
+            s.material.transparency = 0.9;
+            s.material.index_medium = 1.5;
         }
+        
 
-/*
-        // Chargement du fichier OFF
-        {
-            meshes.resize(meshes.size() + 1);
-            Mesh &mesh = meshes.back();
-
-            // Chemin vers le fichier OFF
-            std::string offFilePath = "img/nefertiti.off";
-
-            // Chargement du fichier OFF
-            mesh.loadOFF(offFilePath);
-
-            // Recentrez et mettez à l'échelle le maillage
-            mesh.centerAndScaleToUnit();
-
-            // Recalculez les normales des sommets
-            mesh.recomputeNormals();
-
-            // Trouver la hauteur minimale du maillage (axe Y)
-            float minY = std::numeric_limits<float>::max();
-            for (const auto &vertex : mesh.vertices) {
-                if (vertex.position[1] < minY) {
-                    minY = vertex.position[1];
-                }
-            }
-
-            // Appliquer une translation verticale pour aligner le maillage sur le sol (y = 0)
-            Vec3 translation(0.0, -minY, 0.0);
-            for (auto &vertex : mesh.vertices) {
-                vertex.position += translation;
-            }
-            
-            std::cout << "Maillage chargé : " << offFilePath << std::endl;
-            //std::cout << "Maillage chargé, recentré et positionné sur le sol : " << offFilePath << std::endl;
-        }
-*/
     }
 
 };
