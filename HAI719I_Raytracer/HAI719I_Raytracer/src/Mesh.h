@@ -203,7 +203,7 @@ public:
         closestIntersection.intersectionExists = false;
         closestIntersection.t = FLT_MAX;
         closestIntersection.w0 = closestIntersection.w1 = closestIntersection.w2 = 0.0f;
-        closestIntersection.tIndex = -1;  // Indiquer qu'aucun triangle n'est encore sélectionné.
+        closestIntersection.tIndex = -1;  // Indique qu'aucun triangle n'est encore sélectionné.
         closestIntersection.intersection = Vec3(0, 0, 0);
         closestIntersection.normal = Vec3(0, 0, 0);
         
@@ -219,16 +219,16 @@ public:
         // Parcourir chaque triangle
         for (size_t i = 0; i < triangles.size(); ++i) {
             const auto &triangle = triangles[i];
-            // Récupérer les positions des sommets
+            // Récupére les positions des sommets
             const Vec3 &v0 = vertices[triangle[0]].position * triangleScaling;
             const Vec3 &v1 = vertices[triangle[1]].position * triangleScaling;
             const Vec3 &v2 = vertices[triangle[2]].position * triangleScaling;
 
-            // Calculer les arêtes du triangle
+            // Calcule les arêtes du triangle
             Vec3 edge1 = v1 - v0;
             Vec3 edge2 = v2 - v0;
 
-            // Calculer le déterminant
+            // Calcul du déterminant
             Vec3 h = Vec3::cross(rayDirection, edge2);
             float a = Vec3::dot(edge1, h);
 
@@ -239,26 +239,26 @@ public:
             Vec3 s = rayOrigin - v0;
             float u = f * Vec3::dot(s, h);
 
-            // Vérifier si u est en dehors de la plage [0, 1]
+            // Vérifie si u est en dehors de la plage [0, 1]
             if (u < 0.0f || u > 1.0f) continue;
 
             Vec3 q = Vec3::cross(s, edge1);
             float v = f * Vec3::dot(rayDirection, q);
 
-            // Vérifier si v est en dehors de la plage [0, 1] ou si u + v > 1
+            // Vérifie si v est en dehors de la plage [0, 1] ou si u + v > 1
             if (v < 0.0f || u + v > 1.0f) continue;
 
-            // Calculer t pour l'intersection
+            // Calcul de t pour l'intersection
             float t = f * Vec3::dot(edge2, q);
 
-            // Vérifier si l'intersection est devant le rayon
+            // Vérifie si l'intersection est devant le rayon
             if (t > 1e-6f && t < closestIntersection.t) {
                 closestIntersection.t = t;
                 closestIntersection.intersectionExists = true;
                 closestIntersection.tIndex = i;
                 closestIntersection.intersection = ray.origin() + ray.direction() * t;
 
-                // Interpoler les normales et autres attributs si nécessaire
+                // Interpole les normales et autres attributs
                 closestIntersection.normal =
                     (1.0f - u - v) * vertices[triangle[0]].normal +
                     u * vertices[triangle[1]].normal +
@@ -266,7 +266,6 @@ public:
 
                 closestIntersection.normal.normalize();
 
-                // Vous pouvez également interpoler les couleurs ou coordonnées UV ici.
                 closestIntersection.w0 = 1.0f - u - v;
                 closestIntersection.w1 = u;
                 closestIntersection.w2 = v;

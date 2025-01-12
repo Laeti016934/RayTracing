@@ -107,8 +107,6 @@ public:
     }
 
 
-
-
     RaySceneIntersection computeIntersection(Ray const & ray) {
         RaySceneIntersection result;
         //TODO calculer les intersections avec les objets de la scene et garder la plus proche
@@ -149,6 +147,10 @@ public:
         return result;
     }
 
+
+//-------------------------Eclairage Phong et ombres ------------------------------------
+
+
     Vec3 samplePointOnLight(const Light &light) {
         if (light.type != LightType_Quad) {
             std::cerr << "Échantillonnage impossible : la lumière n'est pas de type Quad." << std::endl;
@@ -174,7 +176,6 @@ public:
 
         return (1 - u - v) * p0 + u * p1 + v * p2;
     }
-
 
     Vec3 calculateAmbient(float Ka) {
         return Ka * globalAmbientLight;
@@ -325,7 +326,7 @@ public:
 
 
 
-/*
+/* // Ancien phong
     Vec3 phong(RaySceneIntersection intersectionObjet) {
         Vec3 color(0., 0., 0.);
         Vec3 ambient(0., 0., 0.);
@@ -490,6 +491,9 @@ public:
     }
 */
 
+//----------------------------------------------------------------------------------------
+
+
 
     Vec3 rayTraceRecursive( Ray ray , int NRemainingBounces ) {
         Vec3 color;
@@ -524,9 +528,9 @@ public:
             color = phong(raySceneIntersection);
         }
 
-        //PHASE 3
+        //PHASE 3 et 4
         if (NRemainingBounces > 0) {
-            // Si l'objet a un matériau miroir (réfléchissant)
+            
             if (raySceneIntersection.typeOfIntersectedObject == SPHERE) {
 
                 Sphere &sph = spheres[raySceneIntersection.objectIndex];
@@ -535,6 +539,7 @@ public:
                 Vec3 N = raySceneIntersection.raySphereIntersection.normal;       // Normale à la surface
                 Vec3 I = ray.direction();                                         // Direction du rayon incident
 
+                // Si l'objet a un matériau miroir (réfléchissant)
                 if (sph.material.type == Material_Mirror) {
 
                     Vec3 R = I - 2.0f * Vec3::dot(I, N) * N; // Direction du rayon réfléchi
@@ -554,6 +559,7 @@ public:
                     color = Vec3::clamp(color, 0.0f, 1.0f);
                 }
 
+                // Si l'objet a un matériau en verre (transparent)
                 if (sph.material.type == Material_Glass) {
                     Vec3 P = raySceneIntersection.raySphereIntersection.intersection; // Point d'intersection
                     Vec3 N = raySceneIntersection.raySphereIntersection.normal; // Normale
@@ -610,11 +616,8 @@ public:
 
 
     Vec3 rayTrace( Ray const & rayStart ) {
-        //TODO appeler la fonction recursive
         int initialBounceCount = 10;
-
         Vec3 color = rayTraceRecursive(rayStart, initialBounceCount);
-
         return color;
     }
 
@@ -705,7 +708,6 @@ public:
         squares.clear();
         lights.clear();
 
-
         // Lumière de type Quad
         {
             lights.resize(lights.size() + 1);
@@ -719,29 +721,6 @@ public:
             initialize_quad_light(light, 4.0f, 4.0f); // Taille 4x4
         }
 
-    /*
-        { //Light
-            lights.resize( lights.size() + 1 );
-            Light & light = lights[lights.size() - 1];
-            light.pos = Vec3( 0.0, 1.5, 0.0 );
-            light.radius = 2.5f;
-            light.powerCorrection = 2.f;
-            light.type = LightType_Spherical;
-            light.material = Vec3(1,1,1);
-            light.isInCamSpace = false;
-        }
-
-        { //Light 2
-            lights.resize( lights.size() + 1 );
-            Light & light = lights[lights.size() - 1];
-            light.pos = Vec3( -1.9, -1.9, 1.9 );
-            light.radius = 2.5f;
-            light.powerCorrection = 2.f;
-            light.type = LightType_Spherical;
-            light.material = Vec3(1.,0.,0.);
-            light.isInCamSpace = false;
-        }
-    */
         { //Back Wall
             squares.resize( squares.size() + 1 );
             Square & s = squares[squares.size() - 1];
@@ -806,55 +785,8 @@ public:
             s.material.specular_material = Vec3( 1.0,1.0,1.0 );
             s.material.shininess = 16;
         }
-        
-        /*
-        { //Front Wall
-            squares.resize( squares.size() + 1 );
-            Square & s = squares[squares.size() - 1];
-            s.setQuad(Vec3(-1., -1., 0.), Vec3(1., 0, 0.), Vec3(0., 1, 0.), 2., 2.);
-            s.translate(Vec3(0., 0., -6.5));
-            s.scale(Vec3(100., 100., 1.));
-            s.rotate_y(180);
-            s.build_arrays();
-            s.material.diffuse_material = Vec3( 1.0,1.0,1.0 );
-            s.material.specular_material = Vec3( 1.0,1.0,1.0 );
-            s.material.shininess = 16;
-        }
-        */
-        
-        /*
-        { //MIRRORED Sphere
 
-            spheres.resize( spheres.size() + 1 );
-            Sphere & s = spheres[spheres.size() - 1];
-            s.m_center = Vec3(1.0, -1.25, 0.5);
-            s.m_radius = 0.75f;
-            s.build_arrays();
-            s.material.type = Material_Mirror;
-            s.material.diffuse_material = Vec3( 1.,1.,1. );
-            s.material.specular_material = Vec3( 1.,1.,1. );
-            s.material.shininess = 16;
-            s.material.transparency = 1.0;
-            s.material.index_medium = 1.4;
-        }
-
-
-        { //GLASS Sphere
-            spheres.resize( spheres.size() + 1 );
-            Sphere & s = spheres[spheres.size() - 1];
-            s.m_center = Vec3(-1.0, -1.25, -0.5);
-            s.m_radius = 0.75f;
-            s.build_arrays();
-            s.material.type = Material_Glass;
-            s.material.diffuse_material = Vec3( 1.,1.,1. );
-            s.material.specular_material = Vec3(  1.,1.,1. );
-            s.material.shininess = 16;
-            s.material.transparency = 0.9;
-            s.material.index_medium = 1.5;
-        }
-        */
-
-        // Chargement du fichier OFF
+        // Initialisation du fichier OFF
         {
             meshes.resize(meshes.size() + 1);
             Mesh &mesh = meshes.back();
@@ -865,13 +797,13 @@ public:
             // Chargement du fichier OFF
             mesh.loadOFF(offFilePath);
 
-            // Recentrez et mettez à l'échelle le maillage
+            // Recentre et met à l'échelle le maillage
             mesh.centerAndScaleToUnit();
 
-            // Recalculez les normales des sommets
+            // Recalcule les normales des sommets
             mesh.recomputeNormals();
 
-            // Trouver la hauteur minimale du maillage (axe Y)
+            // Hauteur minimale du maillage (axe Y)
             float minY = std::numeric_limits<float>::max();
             for (const auto &vertex : mesh.vertices) {
                 if (vertex.position[1] < minY) {
@@ -879,19 +811,16 @@ public:
                 }
             }
 
-            // Appliquer une translation verticale pour aligner le maillage sur le sol (y = 0)
+            // Translation verticale pour aligner le maillage sur le sol
             Vec3 translation(0.0, -minY - 1.8, 0.0);
             for (auto &vertex : mesh.vertices) {
                 vertex.position += translation;
             }
             
             std::cout << "Maillage chargé : " << offFilePath << std::endl;
-            //std::cout << "Maillage chargé, recentré et positionné sur le sol : " << offFilePath << std::endl;
         }
 
     }
-
-
 
     void setup_cornell_box(){
         meshes.clear();
@@ -899,43 +828,19 @@ public:
         squares.clear();
         lights.clear();
 
-
-    // Lumière de type Quad
-    {
-        lights.resize(lights.size() + 1);
-        Light &light = lights.back();
-        light.pos = Vec3(0., 1.5, 0.);
-        light.type = LightType_Quad;
-        light.material = Vec3(1, 1, 1);
-        light.isInCamSpace = false;
-
-        // Initialiser la géométrie du quad
-        initialize_quad_light(light, 4.0f, 4.0f); // Taille 4x4
-    }
-
-/*
-        { //Light
-            lights.resize( lights.size() + 1 );
-            Light & light = lights[lights.size() - 1];
-            light.pos = Vec3( 0.0, 1.5, 0.0 );
-            light.radius = 2.5f;
-            light.powerCorrection = 2.f;
-            light.type = LightType_Spherical;
-            light.material = Vec3(1,1,1);
+        // Lumière de type Quad
+        {
+            lights.resize(lights.size() + 1);
+            Light &light = lights.back();
+            light.pos = Vec3(0., 1.5, 0.);
+            light.type = LightType_Quad;
+            light.material = Vec3(1, 1, 1);
             light.isInCamSpace = false;
+
+            // Initialise la géométrie du quad
+            initialize_quad_light(light, 4.0f, 4.0f); // Taille 4x4
         }
 
-        { //Light 2
-            lights.resize( lights.size() + 1 );
-            Light & light = lights[lights.size() - 1];
-            light.pos = Vec3( -1.9, -1.9, 1.9 );
-            light.radius = 2.5f;
-            light.powerCorrection = 2.f;
-            light.type = LightType_Spherical;
-            light.material = Vec3(1.,0.,0.);
-            light.isInCamSpace = false;
-        }
-*/
         { //Back Wall
             squares.resize( squares.size() + 1 );
             Square & s = squares[squares.size() - 1];
@@ -1001,22 +906,6 @@ public:
             s.material.shininess = 16;
         }
         
-        /*
-        { //Front Wall
-            squares.resize( squares.size() + 1 );
-            Square & s = squares[squares.size() - 1];
-            s.setQuad(Vec3(-1., -1., 0.), Vec3(1., 0, 0.), Vec3(0., 1, 0.), 2., 2.);
-            s.translate(Vec3(0., 0., -6.5));
-            s.scale(Vec3(100., 100., 1.));
-            s.rotate_y(180);
-            s.build_arrays();
-            s.material.diffuse_material = Vec3( 1.0,1.0,1.0 );
-            s.material.specular_material = Vec3( 1.0,1.0,1.0 );
-            s.material.shininess = 16;
-        }
-        */
-        
-        
         { //MIRRORED Sphere
 
             spheres.resize( spheres.size() + 1 );
@@ -1031,7 +920,6 @@ public:
             s.material.transparency = 1.0;
             s.material.index_medium = 1.4;
         }
-
 
         { //GLASS Sphere
             spheres.resize( spheres.size() + 1 );
