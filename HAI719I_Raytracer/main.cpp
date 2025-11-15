@@ -21,6 +21,7 @@
 #include <string>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
 
 #include <algorithm>
 #include "src/Vec3.h"
@@ -168,7 +169,12 @@ void idle () {
 
 void ray_trace_from_camera() {
     int w = glutGet(GLUT_WINDOW_WIDTH)  ,   h = glutGet(GLUT_WINDOW_HEIGHT);
+    
     std::cout << "Ray tracing a " << w << " x " << h << " image" << std::endl;
+    
+    // Mesurer le temps
+    auto start = std::chrono::high_resolution_clock::now();
+
     camera.apply();
     Vec3 pos , dir;
     //    unsigned int nsamples = 100;
@@ -186,8 +192,15 @@ void ray_trace_from_camera() {
             }
             image[x + y*w] /= nsamples;
         }
+
+        // Feedback en pourcentage toutes les lignes
+        int percent = static_cast<int>((y + 1) * 100.0 / h);
+        if (percent % 5 == 0) { // on n'affiche que tous les 5%
+            std::cout << "\rProgress: " << percent << "% " << std::flush;
+        }
     }
-    std::cout << "\tDone" << std::endl;
+
+    std::cout << "\rProgress: 100% - Done!            " << std::endl;
 
     std::string filename = "./rendu.ppm";
     ofstream f(filename.c_str(), ios::binary);
@@ -200,6 +213,11 @@ void ray_trace_from_camera() {
         f << (int)(255.f*std::min<float>(1.f,image[i][0])) << " " << (int)(255.f*std::min<float>(1.f,image[i][1])) << " " << (int)(255.f*std::min<float>(1.f,image[i][2])) << " ";
     f << std::endl;
     f.close();
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    std::cout << "Image saved to '" << filename << "' in " << duration_ms << " ms." << std::endl;
+
 }
 
 
