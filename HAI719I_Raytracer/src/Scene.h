@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <limits>
 #include "Mesh.h"
 #include "Sphere.h"
 #include "Square.h"
@@ -41,6 +42,133 @@ struct Light {
     Light() : powerCorrection(1.0) {}
 
 };
+
+struct AABB{
+    Vec3 maxCoor;
+    Vec3 minCoor;
+
+    AABB(){
+        maxCoor = Vec3(
+            -std::numeric_limits<float>::infinity(),
+            -std::numeric_limits<float>::infinity(),
+            -std::numeric_limits<float>::infinity()
+        );
+
+        minCoor = Vec3(
+            std::numeric_limits<float>::infinity(),
+            std::numeric_limits<float>::infinity(),
+            std::numeric_limits<float>::infinity()
+        );
+    }
+
+    void initialize_AABB(const Scene& scene){
+        /* Iteration to do on:
+        std::vector< Mesh > meshes;
+        std::vector< Sphere > spheres;
+        std::vector< Square > squares;
+        */
+
+        const std::vector<Mesh>& meshes = scene.getMeshes();
+        const std::vector<Square>& squares = scene.getSquares();
+        const std::vector<Sphere>& spheres = scene.getSpheres();
+
+
+        for(int i = 0; i < meshes.size(); i++ ){
+            for(int y = 0; y < meshes[i].vertices.size(); y++){
+
+                // X Axis
+                if(meshes[i].vertices[y].position[0] < minCoor[0]){
+                    minCoor[0] = meshes[i].vertices[y].position[0];
+                }
+                if(meshes[i].vertices[y].position[0] > maxCoor[0]){
+                    maxCoor[0] = meshes[i].vertices[y].position[0];
+                }
+
+                // Y Axis
+                if(meshes[i].vertices[y].position[1] < minCoor[1]){
+                    minCoor[1] = meshes[i].vertices[y].position[1];
+                }
+                if(meshes[i].vertices[y].position[1] > maxCoor[1]){
+                    maxCoor[1] = meshes[i].vertices[y].position[1];
+                }
+
+                // Z Axis
+                if(meshes[i].vertices[y].position[2] < minCoor[2]){
+                    minCoor[2] = meshes[i].vertices[y].position[2];
+                }
+                if(meshes[i].vertices[y].position[2] > maxCoor[2]){
+                    maxCoor[2] = meshes[i].vertices[y].position[2];
+                }
+            }
+        }
+
+        for(int i = 0; i < squares.size(); i++){
+            for (int y = 0; y < squares[i].vertices.size(); y++){
+
+                // Axis X
+                if(squares[i].vertices[y].position[0] < minCoor[0]){
+                    minCoor[0] = squares[i].vertices[y].position[0];
+                }
+                if(squares[i].vertices[y].position[0] > maxCoor[0]){
+                    maxCoor[0] = squares[i].vertices[y].position[0];
+                }
+
+                // Axis Y
+                if(squares[i].vertices[y].position[1] < minCoor[1]){
+                    minCoor[1] = squares[i].vertices[y].position[1];
+                }
+                if(squares[i].vertices[y].position[1] > maxCoor[1]){
+                    maxCoor[1] = squares[i].vertices[y].position[1];
+                }
+
+                // Axis Z
+                if(squares[i].vertices[y].position[2] < minCoor[2]){
+                    minCoor[2] = squares[i].vertices[y].position[2];
+                }
+                if(squares[i].vertices[y].position[2] > maxCoor[2]){
+                    maxCoor[2] = squares[i].vertices[y].position[2];
+                }
+            }
+        }
+
+        for(int i = 0; i < spheres.size(); i++){
+            Vec3 minSph;
+            minSph[0] = spheres[i].m_center[0] - spheres[i].m_radius;
+            minSph[1] = spheres[i].m_center[1] - spheres[i].m_radius;
+            minSph[2] = spheres[i].m_center[2] - spheres[i].m_radius;
+
+            Vec3 maxSph;
+            maxSph[0] = spheres[i].m_center[0] + spheres[i].m_radius;
+            maxSph[1] = spheres[i].m_center[1] + spheres[i].m_radius;
+            maxSph[2] = spheres[i].m_center[2] + spheres[i].m_radius;
+
+            // Axis X
+            if(minSph[0] < minCoor[0]){
+                minCoor[0] = minSph[0];
+            }
+            if(maxSph[0] > maxCoor[0]){
+                maxCoor[0] = maxSph[0];
+            }
+
+            // Axis Y
+            if(minSph[1] < minCoor[1]){
+                minCoor[1] = minSph[1];
+            }
+            if(maxSph[1] > maxCoor[1]){
+                maxCoor[1] = maxSph[1];
+            }
+
+            // Axis Z
+            if(minSph[2] < minCoor[2]){
+                minCoor[2] = minSph[2];
+            }
+            if(maxSph[2] > maxCoor[2]){
+                maxCoor[2] = maxSph[2];
+            }
+        }
+    }
+};
+
 
 void initialize_quad_light(Light &light, float width, float height) {
     if (light.type != LightType_Quad) {
@@ -89,6 +217,12 @@ public:
 
     Scene() {
     }
+
+    const std::vector<Mesh>& getMeshes() const;
+
+    const std::vector<Sphere>& getSpheres() const;
+
+    const std::vector<Square>& getSquares() const;
 
     void draw() {
         // iterer sur l'ensemble des objets, et faire leur rendu :
