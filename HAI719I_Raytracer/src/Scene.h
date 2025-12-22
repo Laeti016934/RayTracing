@@ -62,16 +62,9 @@ struct AABB{
     }
 
     void initialize_AABB(const Scene& scene){
-        /* Iteration to do on:
-        std::vector< Mesh > meshes;
-        std::vector< Sphere > spheres;
-        std::vector< Square > squares;
-        */
-
         const std::vector<Mesh>& meshes = scene.getMeshes();
         const std::vector<Square>& squares = scene.getSquares();
         const std::vector<Sphere>& spheres = scene.getSpheres();
-
 
         for(int i = 0; i < meshes.size(); i++ ){
             for(int y = 0; y < meshes[i].vertices.size(); y++){
@@ -166,6 +159,108 @@ struct AABB{
                 maxCoor[2] = maxSph[2];
             }
         }
+    }
+
+    bool intersectRayAABB(const Ray& ray, const AABB& aabb, float &t_entry, float &t_exit){
+        
+        for(int i = 0; i < 3; i++){
+            // If the ray is parallel to the X plane
+            if(ray.direction()[i] == 0){
+                if(ray.origin()[i] < aabb.minCoor[i] || ray.origin()[i] > aabb.maxCoor[i]){
+                    return false;
+                }
+                /*
+                // Ignored i axis
+                if(aabb.minCoor[i] <= ray.origin()[i] && ray.origin()[i] <= aabb.maxCoor[i]){
+                    // Y Axis
+                    float ty_min = (aabb.minCoor[1] - ray.origin()[1]) / ray.direction()[1];
+                    float ty_max = (aabb.maxCoor[1] - ray.origin()[1]) / ray.direction()[1];
+
+                    // Z Axis
+                    float tz_min = (aabb.minCoor[2] - ray.origin()[2]) / ray.direction()[2];
+                    float tz_max = (aabb.maxCoor[2] - ray.origin()[2]) / ray.direction()[2];
+
+                    if(ray.direction()[1] < 0){
+                        float temp;
+                        temp = ty_min;
+                        ty_min = ty_max;
+                        ty_max = temp;
+                    }
+
+                    if(ray.direction()[2] < 0){
+                        float temp;
+                        temp = tz_min;
+                        tz_min = tz_max;
+                        tz_max = temp;
+                    }
+
+                    t_entry = max(ty_min, tz_min); 
+                    t_exit = min(ty_max, tz_max);
+
+                    if(t_entry <= t_exit && t_exit >= 0){
+                        // Intersection
+                        return true;
+                    }
+
+                    if(t_entry > t_exit || t_exit < 0){
+                        // No intersection
+                        return false;
+                    }
+                }
+                */
+
+    
+
+
+            } else {
+                // X Axis
+                float tx_min = (aabb.minCoor[0] - ray.origin()[0]) / ray.direction()[0];
+                float tx_max = (aabb.maxCoor[0] - ray.origin()[0]) / ray.direction()[0];
+
+                // Y Axis
+                float ty_min = (aabb.minCoor[1] - ray.origin()[1]) / ray.direction()[1];
+                float ty_max = (aabb.maxCoor[1] - ray.origin()[1]) / ray.direction()[1];
+
+                // Z Axis
+                float tz_min = (aabb.minCoor[2] - ray.origin()[2]) / ray.direction()[2];
+                float tz_max = (aabb.maxCoor[2] - ray.origin()[2]) / ray.direction()[2];
+
+                if(ray.direction()[0] < 0){
+                    float temp;
+                    temp = tx_min;
+                    tx_min = tx_max;
+                    tx_max = temp;
+                }
+
+                if(ray.direction()[1] < 0){
+                    float temp;
+                    temp = ty_min;
+                    ty_min = ty_max;
+                    ty_max = temp;
+                }
+
+                if(ray.direction()[2] < 0){
+                    float temp;
+                    temp = tz_min;
+                    tz_min = tz_max;
+                    tz_max = temp;
+                }
+
+                t_entry = max(tx_min, ty_min, tz_min); 
+                t_exit = min(tx_max, ty_max, tz_max);
+
+                if(t_entry <= t_exit && t_exit >= 0){
+                    // Intersection
+                    return true;
+                }
+
+                if(t_entry > t_exit || t_exit < 0){
+                    // No intersection
+                    return false;
+                }
+            }
+        }
+        
     }
 };
 
