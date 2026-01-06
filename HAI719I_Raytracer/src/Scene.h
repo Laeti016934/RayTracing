@@ -161,108 +161,112 @@ struct AABB{
         }
     }
 
-    bool intersectRayAABB(const Ray& ray, const AABB& aabb, float &t_entry, float &t_exit){
-        
-        for(int i = 0; i < 3; i++){
-            // If the ray is parallel to the X plane
-            if(ray.direction()[i] == 0){
-                if(ray.origin()[i] < aabb.minCoor[i] || ray.origin()[i] > aabb.maxCoor[i]){
+    bool intersectRayAABB(const Ray& ray, const AABB& aabb,
+                        float& t_entry, float& t_exit)
+    {
+        // Intervalle global du rayon
+        t_entry = -std::numeric_limits<float>::infinity();
+        t_exit  =  std::numeric_limits<float>::infinity();
+
+        // Pour chaque axe : X = 0, Y = 1, Z = 2
+        for (int axis = 0; axis < 3; ++axis) {
+
+            float o = ray.origin()[axis];
+            float d = ray.direction()[axis];
+            float minA = aabb.minCoor[axis];
+            float maxA = aabb.maxCoor[axis];
+
+            // Rayon parallèle aux plans de la slab
+            if (std::abs(d) < 1e-8f) {
+                // Origine hors de la slab → pas d'intersection
+                if (o < minA || o > maxA) {
                     return false;
                 }
-                /*
-                // Ignored i axis
-                if(aabb.minCoor[i] <= ray.origin()[i] && ray.origin()[i] <= aabb.maxCoor[i]){
-                    // Y Axis
-                    float ty_min = (aabb.minCoor[1] - ray.origin()[1]) / ray.direction()[1];
-                    float ty_max = (aabb.maxCoor[1] - ray.origin()[1]) / ray.direction()[1];
+                // Sinon : axe ignoré → aucune contrainte
+                continue;
+            }
 
-                    // Z Axis
-                    float tz_min = (aabb.minCoor[2] - ray.origin()[2]) / ray.direction()[2];
-                    float tz_max = (aabb.maxCoor[2] - ray.origin()[2]) / ray.direction()[2];
+            // Rayon non parallèle : calcul des t
+            float t1 = (minA - o) / d;
+            float t2 = (maxA - o) / d;
 
-                    if(ray.direction()[1] < 0){
-                        float temp;
-                        temp = ty_min;
-                        ty_min = ty_max;
-                        ty_max = temp;
-                    }
+            // Ordonner t1 et t2
+            if (t1 > t2) std::swap(t1, t2);
 
-                    if(ray.direction()[2] < 0){
-                        float temp;
-                        temp = tz_min;
-                        tz_min = tz_max;
-                        tz_max = temp;
-                    }
+            // Intersection avec l’intervalle global
+            t_entry = std::max(t_entry, t1);
+            t_exit  = std::min(t_exit,  t2);
 
-                    t_entry = max(ty_min, tz_min); 
-                    t_exit = min(ty_max, tz_max);
-
-                    if(t_entry <= t_exit && t_exit >= 0){
-                        // Intersection
-                        return true;
-                    }
-
-                    if(t_entry > t_exit || t_exit < 0){
-                        // No intersection
-                        return false;
-                    }
-                }
-                */
-
-    
-
-
-            } else {
-                // X Axis
-                float tx_min = (aabb.minCoor[0] - ray.origin()[0]) / ray.direction()[0];
-                float tx_max = (aabb.maxCoor[0] - ray.origin()[0]) / ray.direction()[0];
-
-                // Y Axis
-                float ty_min = (aabb.minCoor[1] - ray.origin()[1]) / ray.direction()[1];
-                float ty_max = (aabb.maxCoor[1] - ray.origin()[1]) / ray.direction()[1];
-
-                // Z Axis
-                float tz_min = (aabb.minCoor[2] - ray.origin()[2]) / ray.direction()[2];
-                float tz_max = (aabb.maxCoor[2] - ray.origin()[2]) / ray.direction()[2];
-
-                if(ray.direction()[0] < 0){
-                    float temp;
-                    temp = tx_min;
-                    tx_min = tx_max;
-                    tx_max = temp;
-                }
-
-                if(ray.direction()[1] < 0){
-                    float temp;
-                    temp = ty_min;
-                    ty_min = ty_max;
-                    ty_max = temp;
-                }
-
-                if(ray.direction()[2] < 0){
-                    float temp;
-                    temp = tz_min;
-                    tz_min = tz_max;
-                    tz_max = temp;
-                }
-
-                t_entry = max(tx_min, ty_min, tz_min); 
-                t_exit = min(tx_max, ty_max, tz_max);
-
-                if(t_entry <= t_exit && t_exit >= 0){
-                    // Intersection
-                    return true;
-                }
-
-                if(t_entry > t_exit || t_exit < 0){
-                    // No intersection
-                    return false;
-                }
+            // Rejet anticipé
+            if (t_entry > t_exit) {
+                return false;
             }
         }
-        
+
+        // Intersection valide seulement si elle est devant le rayon
+        return t_exit >= 0.0f;
     }
 };
+
+enum class PrimitiveType {
+    Triangle,
+    Sphere
+};
+
+struct PrimitiveRef {
+    PrimitiveType type;
+
+    // Index vers les données réelles
+    int objectIndex;     // index du mesh / sphere dans la scène
+    int primitiveIndex;  // index du triangle (inutile pour une sphère)
+};
+
+
+struct Node
+{
+    // Spatial data : AABB
+    AABB boundingBox;
+
+    // If internal node
+    float splittingAxis;    // Splitting axis (X, Y or Z)
+    float cuttingPos;       // Cutting position
+    Node* leftChild;        // Left child 
+    Node* rightChild;       // Right child
+
+    // If leaf node
+    std::vector<PrimitiveRef> primitives;    // List of primitives 
+
+    bool leaf; // Node State 
+
+    Node()
+        : splittingAxis(-1),
+          cuttingPos(0.f),
+          leftChild(nullptr),
+          rightChild(nullptr),
+          leaf(false)
+    {}
+};
+
+
+struct KDTree
+{
+    Node* root;                 // Root node
+    
+    int maxDepth;               // Maximum depth
+    int maxPrimitivesPerLeaf;   // Max number of primitives per leaf
+    float epsilon;              // Epsilon of minimal size
+
+    KDTree();
+
+    // Construction globale
+    void buildKDTree(/* scène ou primitives */);
+
+private :
+    // Construction récursive
+    Node* buildNode(/* primitives, AABB, depth */);
+   
+};
+
 
 
 void initialize_quad_light(Light &light, float width, float height) {
