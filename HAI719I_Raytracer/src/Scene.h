@@ -259,11 +259,74 @@ struct KDTree
     KDTree();
 
     // Construction globale
-    void buildKDTree(/* scène ou primitives */);
+    void buildKDTree(/* scène ou primitives */){
+        maxDepth = 0;
+        //root = buildNode();
+    }
 
 private :
     // Construction récursive
-    Node* buildNode(/* primitives, AABB, depth */);
+    Node* buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, int depth){
+        Node* n = new Node();
+        n->boundingBox = aabb;
+        /*
+            Tester le critère d’arrêt
+                primitives ≤ seuil ?
+                profondeur max atteinte ?
+                boîte trop petite ?
+
+            Si arrêt :
+                marquer leaf = true
+                stocker la liste de primitives
+                retourner le nœud
+
+            Sinon (pas encore subdivisé) :
+                choisir l’axe de séparation
+                stocker l’axe dans le nœud
+                ❌ ne PAS encore couper
+                ❌ ne PAS créer les enfants
+        */
+
+        //primitives ≤ seuil ?
+        if(prim.size() <= maxPrimitivesPerLeaf){
+            n->leaf = true;
+            n->primitives = prim;
+            return n;
+        }
+        //profondeur max atteinte ?
+        if(depth >= maxDepth){
+            n->leaf = true;
+            n->primitives = prim;
+            return n;
+        }
+
+        float sizeX = aabb.maxCoor[0] - aabb.minCoor[0];
+        float sizeY = aabb.maxCoor[1] - aabb.minCoor[1];
+        float sizeZ = aabb.maxCoor[2] - aabb.minCoor[2];
+        float aabbSize = max(sizeX, sizeY, sizeZ);
+
+        if(aabbSize < epsilon){
+            n->leaf = true;
+            n->primitives = prim;
+            return n;
+        }
+
+        // Sinon : nœud interne
+        n->leaf = false;
+
+        // Axe de coupe
+        if(sizeX >= sizeY && sizeX >= sizeZ){
+            n->splittingAxis = 0;
+        }
+        else if(sizeY >= sizeX && sizeY >= sizeZ){
+            n->splittingAxis = 1;
+        }
+        else{
+            n->splittingAxis = 2;
+        }
+        
+        return n;
+    }
    
 };
 
