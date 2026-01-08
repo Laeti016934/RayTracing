@@ -210,7 +210,8 @@ struct AABB{
 
 enum class PrimitiveType {
     Triangle,
-    Sphere
+    Sphere,
+    Mesh
 };
 
 struct PrimitiveRef {
@@ -228,7 +229,7 @@ struct Node
     AABB boundingBox;
 
     // If internal node
-    float splittingAxis;    // Splitting axis (X, Y or Z)
+    int splittingAxis;    // Splitting axis (X, Y or Z)
     float cuttingPos;       // Cutting position
     Node* leftChild;        // Left child 
     Node* rightChild;       // Right child
@@ -259,33 +260,53 @@ struct KDTree
     KDTree();
 
     // Construction globale
-    void buildKDTree(/* scène ou primitives */){
-        maxDepth = 0;
-        //root = buildNode();
+    void buildKDTree(const Scene& scene){
+        // Récupération des primitives
+        std::vector<PrimitiveRef> allPrimitives;
+
+        // Spheres
+        const auto& spheres = scene.getSpheres();
+        for (int i = 0; i < spheres.size(); i++) {
+            PrimitiveRef prim;
+            prim.type = PrimitiveType::Sphere;
+            prim.objectIndex = i;
+            prim.primitiveIndex = -1; // inutile pour sphère
+            allPrimitives.push_back(prim);
+        }
+
+        // Squares
+        const auto& squares = scene.getSquares();
+        for (int i = 0; i < squares.size(); i++) {
+            PrimitiveRef prim;
+            prim.type = PrimitiveType::Triangle;
+            prim.objectIndex = i;
+            prim.primitiveIndex = -1;
+            allPrimitives.push_back(prim);
+        }
+
+        // Mesh
+        const auto& meshes = scene.getMeshes();
+        for (int i = 0; i < meshes.size(); i++) {
+            PrimitiveRef prim;
+            prim.type = PrimitiveType::Mesh;
+            prim.objectIndex = i;
+            prim.primitiveIndex = -1;
+            allPrimitives.push_back(prim);
+        }
+
+        // AABB globale de la scene
+        AABB globalAABB;
+        globalAABB.initialize_AABB(scene);
+
+        // Construction récursive du KDTree
+        root = buildNode(globalAABB, allPrimitives, scene, 0);
     }
 
 private :
     // Construction récursive
-    Node* buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, int depth){
+    Node* buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene& scene, int depth){
         Node* n = new Node();
         n->boundingBox = aabb;
-        /*
-            Tester le critère d’arrêt
-                primitives ≤ seuil ?
-                profondeur max atteinte ?
-                boîte trop petite ?
-
-            Si arrêt :
-                marquer leaf = true
-                stocker la liste de primitives
-                retourner le nœud
-
-            Sinon (pas encore subdivisé) :
-                choisir l’axe de séparation
-                stocker l’axe dans le nœud
-                ❌ ne PAS encore couper
-                ❌ ne PAS créer les enfants
-        */
 
         //primitives ≤ seuil ?
         if(prim.size() <= maxPrimitivesPerLeaf){
@@ -324,7 +345,135 @@ private :
         else{
             n->splittingAxis = 2;
         }
-        
+
+        // Calcul de la position de coupe (Couper au milieu de la boîte englobante sur l’axe choisi)
+        switch (n->splittingAxis){
+            case 0:             // X Axis
+                n->cuttingPos = (aabb.minCoor[0] + aabb.maxCoor[0]) / 2;
+                break;
+            
+            case 1:             // Y Axis
+                n->cuttingPos = (aabb.minCoor[1] + aabb.maxCoor[1]) / 2;
+                break;
+
+            case 2:             // Z Axis
+                n->cuttingPos = (aabb.minCoor[2] + aabb.maxCoor[2]) / 2;
+                break;
+            
+            default:
+                break;
+        }
+
+        // Construction des bounding boxes des enfants
+        AABB aabbLeftChild = aabb;
+        aabbLeftChild.maxCoor[n->splittingAxis] = n->cuttingPos;
+
+        AABB aabbRightChild = aabb;
+        aabbRightChild.minCoor[n->splittingAxis] = n->cuttingPos;
+
+        std::vector<PrimitiveRef> leftPrimitives;
+        std::vector<PrimitiveRef> rightPrimitives;
+        std::vector<Mesh> const& meshes    = scene.getMeshes();
+        std::vector<Square> const& squares = scene.getSquares();
+        std::vector<Sphere> const& spheres = scene.getSpheres();
+
+        for(int i = 0; i < prim.size(); i++){
+            /*
+            calculer pMin (sa borne minimale sur l’axe de coupe), pMax (sa borne maximale sur l’axe de coupe)
+            tester les trois cas
+            ajouter la primitive à la/les bonne(s) liste(s)
+            */
+
+            // Calculs de pMin et pMax 
+            float pMin, pMax;
+            int axis = n->splittingAxis;
+
+            switch (prim[i].type) {
+                case PrimitiveType::Sphere:
+                    /*
+                    pMin = center[axis] - radius
+                    pMax = center[axis] + radius
+                    */
+                    const Sphere& s = spheres[prim[i].objectIndex];
+                    pMin = s.m_center[axis] - s.m_radius;
+                    pMax = s.m_center[axis] + s.m_radius;
+                    break;
+                case PrimitiveType::Triangle:
+                    /*
+                    prendre les 3 sommets
+                    pMin = min(v0, v1, v2)[axis]
+                    pMax = max(v0, v1, v2)[axis]
+                    */
+                    const Square& t = squares[prim[i].objectIndex];
+                    pMin = std::min({ t.vertices[0].position[axis],
+                                    t.vertices[1].position[axis],
+                                    t.vertices[2].position[axis]});
+
+                    pMax = std::max({ t.vertices[0].position[axis],
+                                    t.vertices[1].position[axis],
+                                    t.vertices[2].position[axis]});
+                    break;
+                default: // Mesh
+                    /*
+                    utiliser son AABB pré-calculée
+                    prendre min/max sur l’axe
+                    */
+                    const Mesh& m = meshes[prim[i].objectIndex];
+                    
+                    // Initialiser pMin et pMax
+                    pMin =  std::numeric_limits<float>::infinity();
+                    pMax = -std::numeric_limits<float>::infinity();
+
+                    // Parcourir tous les vertices pour trouver min/max sur l'axe choisi
+                    for (int v = 0; v < m.vertices.size(); v++) {
+                        float val = m.vertices[v].position[axis];
+                        if (val < pMin) pMin = val;
+                        if (val > pMax) pMax = val;
+                    }
+
+                    break;
+            }
+
+            // Répartition des primitives
+            if (pMax <= n->cuttingPos) {
+                leftPrimitives.push_back(prim[i]);
+            } else if (pMin >= n->cuttingPos) {
+                rightPrimitives.push_back(prim[i]);
+            } else {
+                // la primitive traverse la coupe → ajouter aux deux
+                leftPrimitives.push_back(prim[i]);
+                rightPrimitives.push_back(prim[i]);
+            }
+        }
+
+        // Gestion des cas dégénérés
+        bool degenerate = false;
+
+        // Cas 1 : aucune séparation réelle
+        if (leftPrimitives.size() == prim.size() || rightPrimitives.size() == prim.size()) {
+            degenerate = true;
+        }
+
+        // Cas 2 : une des listes est vide
+        if (leftPrimitives.empty() || rightPrimitives.empty()) {
+            degenerate = true;
+        }
+
+        // Cas 3 : duplication totale
+        if (leftPrimitives == prim && rightPrimitives == prim) {
+            degenerate = true;
+        }
+
+        // Si partition dégénérée → créer une feuille
+        if (degenerate) {
+            n->leaf = true;
+            n->primitives = prim;
+            return n;
+        }
+
+        n->leftChild  = buildNode(aabbLeftChild, leftPrimitives, scene, depth + 1);
+        n->rightChild = buildNode(aabbRightChild, rightPrimitives, scene, depth + 1);
+
         return n;
     }
    
