@@ -222,6 +222,14 @@ struct PrimitiveRef {
     int primitiveIndex;  // index du triangle (inutile pour une sphère)
 };
 
+struct Hit {
+    bool hit = false;
+    float t = std::numeric_limits<float>::infinity();
+    Vec3 position;
+    Vec3 normal;
+
+    PrimitiveRef primitive;
+};
 
 struct Node
 {
@@ -301,6 +309,61 @@ struct KDTree
         // Construction récursive du KDTree
         root = buildNode(globalAABB, allPrimitives, scene, 0);
     }
+
+    bool intersectPrimitive(
+    const PrimitiveRef& prim,
+    const Scene& scene,
+    const Ray& ray,
+    Hit& hit
+    ) const {
+        bool hitRes = false;
+        switch (prim.type) {
+            case PrimitiveType::Sphere: {
+                const Sphere& s = scene.getSpheres()[prim.objectIndex];
+                RaySphereIntersection res = s.intersect(ray);
+                hitRes = res.intersectionExists;
+                if (hitRes) {
+                    hit.hit = true;
+                    hit.t = res.t;
+                    hit.position = res.intersection;
+                    hit.normal = res.normal;
+                    hit.primitive = prim;
+                }
+                break;
+            }
+
+            case PrimitiveType::Triangle: {
+                const Square& sq = scene.getSquares()[prim.objectIndex];
+                RaySquareIntersection res = sq.intersect(ray);
+                hitRes = res.intersectionExists;
+                if (hitRes) {
+                    hit.hit = true;
+                    hit.t = res.t;
+                    hit.position = res.intersection;
+                    hit.normal = res.normal;
+                    hit.primitive = prim;
+                }
+                break;
+            }
+
+            case PrimitiveType::Mesh: {
+                const Mesh& m = scene.getMeshes()[prim.objectIndex];
+                RayTriangleIntersection res = m.intersect(ray);
+                hitRes = res.intersectionExists;
+                if (hitRes) {
+                    hit.hit = true;
+                    hit.t = res.t;
+                    hit.position = res.intersection;
+                    hit.normal = res.normal;
+                    hit.primitive = prim;
+                }
+                break;
+            }
+        }
+        return hitRes;
+    }
+
+
 
 private :
     // Construction récursive
@@ -389,7 +452,7 @@ private :
             int axis = n->splittingAxis;
 
             switch (prim[i].type) {
-                case PrimitiveType::Sphere:
+                case PrimitiveType::Sphere: {
                     /*
                     pMin = center[axis] - radius
                     pMax = center[axis] + radius
@@ -398,7 +461,8 @@ private :
                     pMin = s.m_center[axis] - s.m_radius;
                     pMax = s.m_center[axis] + s.m_radius;
                     break;
-                case PrimitiveType::Triangle:
+                }
+                case PrimitiveType::Triangle: {
                     /*
                     prendre les 3 sommets
                     pMin = min(v0, v1, v2)[axis]
@@ -413,6 +477,7 @@ private :
                                     t.vertices[1].position[axis],
                                     t.vertices[2].position[axis]});
                     break;
+                }
                 default: // Mesh
                     /*
                     utiliser son AABB pré-calculée
@@ -476,7 +541,96 @@ private :
 
         return n;
     }
-   
+
+    bool intersectNode(Node* node, const Scene& scene, const Ray& ray, float t_entry, float t_exit, Hit& hit) const {
+        int axis = node->splittingAxis;
+        // Feuille
+        if (node->leaf) {
+            bool hitSomething = false;
+            for (const PrimitiveRef& p : node->primitives) {
+                Hit tempHit;
+                if (intersectPrimitive(p, scene, ray, tempHit)) {
+                    hitSomething = true;
+                    if (!hit.hit || tempHit.t < hit.t) {
+                        hit = tempHit;
+                    }
+                }
+            }
+            return hitSomething;
+        }
+        
+        //Noeud interne
+
+        //Calcul de t_split (la valeur de t pour laquelle le rayon coupe ce plan)
+        //t_split sert à savoir si, quand et dans quel ordre le rayon traverse les deux enfants du KD-tree.
+        //Est-ce que le rayon passe du premier enfant au second avant ou après avoir quitté le nœud ?
+        float t_split = (node->cuttingPos - ray.origin()[axis]) / ray.direction()[axis];
+        /*
+        Quand tu testes l’intersection du rayon avec l’AABB du nœud, tu obtiens :
+            t_entry → entrée dans la boîte
+            t_exit → sortie de la boîte
+
+        Donc le rayon n’existe dans ce nœud que pour :
+            t∈[t_entry,t_exit]
+        */
+        /* Étape 2 : définir :
+            near child
+            far child
+
+            if (ray.direction()[axis] >= 0) {
+                near = leftChild;
+                far  = rightChild;
+            } else {
+                near = rightChild;
+                far  = leftChild;
+            }
+
+            Parce que :
+                leftChild = coordonnées plus petites
+                rightChild = coordonnées plus grandes
+
+            Si tu avances vers les valeurs croissantes (D > 0) :
+                tu touches d’abord la zone des petites valeurs
+
+            Si tu avances vers les valeurs décroissantes (D < 0) :
+                tu touches d’abord la zone des grandes valeurs
+
+        */
+
+        Node* nearChild;
+        Node* farChild;
+
+        if (ray.direction()[axis] >= 0) {
+            nearChild = node->leftChild;
+            farChild  = node->rightChild;
+        } else {
+            nearChild = node->rightChild;
+            farChild  = node->leftChild;
+        }
+
+        // Étape 3 : tester les cas
+
+        // Cas 1 : Le rayon est déjà du bon côté dès qu’il entre dans le nœud (t_split <= t_entry)
+        if(t_split <= t_entry){
+            return intersectNode(farChild, scene, ray, t_entry, t_exit, hit);
+        }
+        // Cas 2 : Le rayon quitte le nœud avant de traverser le plan de coupe (t_split >= t_exit)
+        else if(t_split >= t_exit){
+            return intersectNode(nearChild, scene, ray, t_entry, t_exit, hit);
+        }
+        // Cas 3 : Le rayon traverse le plan de séparation (t_entry < t_split < t_exit)
+        else{
+            // Tester d’abord le near child
+            bool hitNear = intersectNode(nearChild, scene, ray, t_entry, t_split, hit);
+            bool hitFar = false;
+            // Si on a touché quelque chose dans le near child et que c’est avant t_split
+            if (!hitNear || hit.t > t_split) {
+                hitFar = intersectNode(farChild, scene, ray, t_split, t_exit, hit);
+            }
+            
+            return hitNear || hitFar;
+        }
+    }
 };
 
 
