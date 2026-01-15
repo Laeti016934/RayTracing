@@ -8,6 +8,8 @@
 #include "Mesh.h"
 #include "Sphere.h"
 #include "Square.h"
+#include "AABB.h"
+#include "KDTree.h"
 
 
 #include <GL/glut.h>
@@ -42,597 +44,6 @@ struct Light {
     Light() : powerCorrection(1.0) {}
 
 };
-
-struct AABB{
-    Vec3 maxCoor;
-    Vec3 minCoor;
-
-    AABB(){
-        maxCoor = Vec3(
-            -std::numeric_limits<float>::infinity(),
-            -std::numeric_limits<float>::infinity(),
-            -std::numeric_limits<float>::infinity()
-        );
-
-        minCoor = Vec3(
-            std::numeric_limits<float>::infinity(),
-            std::numeric_limits<float>::infinity(),
-            std::numeric_limits<float>::infinity()
-        );
-    }
-
-    void initialize_AABB(const Scene& scene){
-        const std::vector<Mesh>& meshes = scene.getMeshes();
-        const std::vector<Square>& squares = scene.getSquares();
-        const std::vector<Sphere>& spheres = scene.getSpheres();
-
-        for(int i = 0; i < meshes.size(); i++ ){
-            for(int y = 0; y < meshes[i].vertices.size(); y++){
-
-                // X Axis
-                if(meshes[i].vertices[y].position[0] < minCoor[0]){
-                    minCoor[0] = meshes[i].vertices[y].position[0];
-                }
-                if(meshes[i].vertices[y].position[0] > maxCoor[0]){
-                    maxCoor[0] = meshes[i].vertices[y].position[0];
-                }
-
-                // Y Axis
-                if(meshes[i].vertices[y].position[1] < minCoor[1]){
-                    minCoor[1] = meshes[i].vertices[y].position[1];
-                }
-                if(meshes[i].vertices[y].position[1] > maxCoor[1]){
-                    maxCoor[1] = meshes[i].vertices[y].position[1];
-                }
-
-                // Z Axis
-                if(meshes[i].vertices[y].position[2] < minCoor[2]){
-                    minCoor[2] = meshes[i].vertices[y].position[2];
-                }
-                if(meshes[i].vertices[y].position[2] > maxCoor[2]){
-                    maxCoor[2] = meshes[i].vertices[y].position[2];
-                }
-            }
-        }
-
-        for(int i = 0; i < squares.size(); i++){
-            for (int y = 0; y < squares[i].vertices.size(); y++){
-
-                // Axis X
-                if(squares[i].vertices[y].position[0] < minCoor[0]){
-                    minCoor[0] = squares[i].vertices[y].position[0];
-                }
-                if(squares[i].vertices[y].position[0] > maxCoor[0]){
-                    maxCoor[0] = squares[i].vertices[y].position[0];
-                }
-
-                // Axis Y
-                if(squares[i].vertices[y].position[1] < minCoor[1]){
-                    minCoor[1] = squares[i].vertices[y].position[1];
-                }
-                if(squares[i].vertices[y].position[1] > maxCoor[1]){
-                    maxCoor[1] = squares[i].vertices[y].position[1];
-                }
-
-                // Axis Z
-                if(squares[i].vertices[y].position[2] < minCoor[2]){
-                    minCoor[2] = squares[i].vertices[y].position[2];
-                }
-                if(squares[i].vertices[y].position[2] > maxCoor[2]){
-                    maxCoor[2] = squares[i].vertices[y].position[2];
-                }
-            }
-        }
-
-        for(int i = 0; i < spheres.size(); i++){
-            Vec3 minSph;
-            minSph[0] = spheres[i].m_center[0] - spheres[i].m_radius;
-            minSph[1] = spheres[i].m_center[1] - spheres[i].m_radius;
-            minSph[2] = spheres[i].m_center[2] - spheres[i].m_radius;
-
-            Vec3 maxSph;
-            maxSph[0] = spheres[i].m_center[0] + spheres[i].m_radius;
-            maxSph[1] = spheres[i].m_center[1] + spheres[i].m_radius;
-            maxSph[2] = spheres[i].m_center[2] + spheres[i].m_radius;
-
-            // Axis X
-            if(minSph[0] < minCoor[0]){
-                minCoor[0] = minSph[0];
-            }
-            if(maxSph[0] > maxCoor[0]){
-                maxCoor[0] = maxSph[0];
-            }
-
-            // Axis Y
-            if(minSph[1] < minCoor[1]){
-                minCoor[1] = minSph[1];
-            }
-            if(maxSph[1] > maxCoor[1]){
-                maxCoor[1] = maxSph[1];
-            }
-
-            // Axis Z
-            if(minSph[2] < minCoor[2]){
-                minCoor[2] = minSph[2];
-            }
-            if(maxSph[2] > maxCoor[2]){
-                maxCoor[2] = maxSph[2];
-            }
-        }
-    }
-
-    bool intersectRayAABB(const Ray& ray, const AABB& aabb,
-                        float& t_entry, float& t_exit)
-    {
-        // Intervalle global du rayon
-        t_entry = -std::numeric_limits<float>::infinity();
-        t_exit  =  std::numeric_limits<float>::infinity();
-
-        // Pour chaque axe : X = 0, Y = 1, Z = 2
-        for (int axis = 0; axis < 3; ++axis) {
-
-            float o = ray.origin()[axis];
-            float d = ray.direction()[axis];
-            float minA = aabb.minCoor[axis];
-            float maxA = aabb.maxCoor[axis];
-
-            // Rayon parallèle aux plans de la slab
-            if (std::abs(d) < 1e-8f) {
-                // Origine hors de la slab → pas d'intersection
-                if (o < minA || o > maxA) {
-                    return false;
-                }
-                // Sinon : axe ignoré → aucune contrainte
-                continue;
-            }
-
-            // Rayon non parallèle : calcul des t
-            float t1 = (minA - o) / d;
-            float t2 = (maxA - o) / d;
-
-            // Ordonner t1 et t2
-            if (t1 > t2) std::swap(t1, t2);
-
-            // Intersection avec l’intervalle global
-            t_entry = std::max(t_entry, t1);
-            t_exit  = std::min(t_exit,  t2);
-
-            // Rejet anticipé
-            if (t_entry > t_exit) {
-                return false;
-            }
-        }
-
-        // Intersection valide seulement si elle est devant le rayon
-        return t_exit >= 0.0f;
-    }
-};
-
-enum class PrimitiveType {
-    Triangle,
-    Sphere,
-    Mesh
-};
-
-struct PrimitiveRef {
-    PrimitiveType type;
-
-    // Index vers les données réelles
-    int objectIndex;     // index du mesh / sphere dans la scène
-    int primitiveIndex;  // index du triangle (inutile pour une sphère)
-};
-
-struct Hit {
-    bool hit = false;
-    float t = std::numeric_limits<float>::infinity();
-    Vec3 position;
-    Vec3 normal;
-
-    PrimitiveRef primitive;
-};
-
-struct Node
-{
-    // Spatial data : AABB
-    AABB boundingBox;
-
-    // If internal node
-    int splittingAxis;    // Splitting axis (X, Y or Z)
-    float cuttingPos;       // Cutting position
-    Node* leftChild;        // Left child 
-    Node* rightChild;       // Right child
-
-    // If leaf node
-    std::vector<PrimitiveRef> primitives;    // List of primitives 
-
-    bool leaf; // Node State 
-
-    Node()
-        : splittingAxis(-1),
-          cuttingPos(0.f),
-          leftChild(nullptr),
-          rightChild(nullptr),
-          leaf(false)
-    {}
-};
-
-
-struct KDTree
-{
-    Node* root;                 // Root node
-    
-    int maxDepth;               // Maximum depth
-    int maxPrimitivesPerLeaf;   // Max number of primitives per leaf
-    float epsilon;              // Epsilon of minimal size
-
-    KDTree();
-
-    // Construction globale
-    void buildKDTree(const Scene& scene){
-        // Récupération des primitives
-        std::vector<PrimitiveRef> allPrimitives;
-
-        // Spheres
-        const auto& spheres = scene.getSpheres();
-        for (int i = 0; i < spheres.size(); i++) {
-            PrimitiveRef prim;
-            prim.type = PrimitiveType::Sphere;
-            prim.objectIndex = i;
-            prim.primitiveIndex = -1; // inutile pour sphère
-            allPrimitives.push_back(prim);
-        }
-
-        // Squares
-        const auto& squares = scene.getSquares();
-        for (int i = 0; i < squares.size(); i++) {
-            PrimitiveRef prim;
-            prim.type = PrimitiveType::Triangle;
-            prim.objectIndex = i;
-            prim.primitiveIndex = -1;
-            allPrimitives.push_back(prim);
-        }
-
-        // Mesh
-        const auto& meshes = scene.getMeshes();
-        for (int i = 0; i < meshes.size(); i++) {
-            PrimitiveRef prim;
-            prim.type = PrimitiveType::Mesh;
-            prim.objectIndex = i;
-            prim.primitiveIndex = -1;
-            allPrimitives.push_back(prim);
-        }
-
-        // AABB globale de la scene
-        AABB globalAABB;
-        globalAABB.initialize_AABB(scene);
-
-        // Construction récursive du KDTree
-        root = buildNode(globalAABB, allPrimitives, scene, 0);
-    }
-
-    bool intersectPrimitive(
-    const PrimitiveRef& prim,
-    const Scene& scene,
-    const Ray& ray,
-    Hit& hit
-    ) const {
-        bool hitRes = false;
-        switch (prim.type) {
-            case PrimitiveType::Sphere: {
-                const Sphere& s = scene.getSpheres()[prim.objectIndex];
-                RaySphereIntersection res = s.intersect(ray);
-                hitRes = res.intersectionExists;
-                if (hitRes) {
-                    hit.hit = true;
-                    hit.t = res.t;
-                    hit.position = res.intersection;
-                    hit.normal = res.normal;
-                    hit.primitive = prim;
-                }
-                break;
-            }
-
-            case PrimitiveType::Triangle: {
-                const Square& sq = scene.getSquares()[prim.objectIndex];
-                RaySquareIntersection res = sq.intersect(ray);
-                hitRes = res.intersectionExists;
-                if (hitRes) {
-                    hit.hit = true;
-                    hit.t = res.t;
-                    hit.position = res.intersection;
-                    hit.normal = res.normal;
-                    hit.primitive = prim;
-                }
-                break;
-            }
-
-            case PrimitiveType::Mesh: {
-                const Mesh& m = scene.getMeshes()[prim.objectIndex];
-                RayTriangleIntersection res = m.intersect(ray);
-                hitRes = res.intersectionExists;
-                if (hitRes) {
-                    hit.hit = true;
-                    hit.t = res.t;
-                    hit.position = res.intersection;
-                    hit.normal = res.normal;
-                    hit.primitive = prim;
-                }
-                break;
-            }
-        }
-        return hitRes;
-    }
-
-
-
-private :
-    // Construction récursive
-    Node* buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene& scene, int depth){
-        Node* n = new Node();
-        n->boundingBox = aabb;
-
-        //primitives ≤ seuil ?
-        if(prim.size() <= maxPrimitivesPerLeaf){
-            n->leaf = true;
-            n->primitives = prim;
-            return n;
-        }
-        //profondeur max atteinte ?
-        if(depth >= maxDepth){
-            n->leaf = true;
-            n->primitives = prim;
-            return n;
-        }
-
-        float sizeX = aabb.maxCoor[0] - aabb.minCoor[0];
-        float sizeY = aabb.maxCoor[1] - aabb.minCoor[1];
-        float sizeZ = aabb.maxCoor[2] - aabb.minCoor[2];
-        float aabbSize = max(sizeX, sizeY, sizeZ);
-
-        if(aabbSize < epsilon){
-            n->leaf = true;
-            n->primitives = prim;
-            return n;
-        }
-
-        // Sinon : nœud interne
-        n->leaf = false;
-
-        // Axe de coupe
-        if(sizeX >= sizeY && sizeX >= sizeZ){
-            n->splittingAxis = 0;
-        }
-        else if(sizeY >= sizeX && sizeY >= sizeZ){
-            n->splittingAxis = 1;
-        }
-        else{
-            n->splittingAxis = 2;
-        }
-
-        // Calcul de la position de coupe (Couper au milieu de la boîte englobante sur l’axe choisi)
-        switch (n->splittingAxis){
-            case 0:             // X Axis
-                n->cuttingPos = (aabb.minCoor[0] + aabb.maxCoor[0]) / 2;
-                break;
-            
-            case 1:             // Y Axis
-                n->cuttingPos = (aabb.minCoor[1] + aabb.maxCoor[1]) / 2;
-                break;
-
-            case 2:             // Z Axis
-                n->cuttingPos = (aabb.minCoor[2] + aabb.maxCoor[2]) / 2;
-                break;
-            
-            default:
-                break;
-        }
-
-        // Construction des bounding boxes des enfants
-        AABB aabbLeftChild = aabb;
-        aabbLeftChild.maxCoor[n->splittingAxis] = n->cuttingPos;
-
-        AABB aabbRightChild = aabb;
-        aabbRightChild.minCoor[n->splittingAxis] = n->cuttingPos;
-
-        std::vector<PrimitiveRef> leftPrimitives;
-        std::vector<PrimitiveRef> rightPrimitives;
-        std::vector<Mesh> const& meshes    = scene.getMeshes();
-        std::vector<Square> const& squares = scene.getSquares();
-        std::vector<Sphere> const& spheres = scene.getSpheres();
-
-        for(int i = 0; i < prim.size(); i++){
-            /*
-            calculer pMin (sa borne minimale sur l’axe de coupe), pMax (sa borne maximale sur l’axe de coupe)
-            tester les trois cas
-            ajouter la primitive à la/les bonne(s) liste(s)
-            */
-
-            // Calculs de pMin et pMax 
-            float pMin, pMax;
-            int axis = n->splittingAxis;
-
-            switch (prim[i].type) {
-                case PrimitiveType::Sphere: {
-                    /*
-                    pMin = center[axis] - radius
-                    pMax = center[axis] + radius
-                    */
-                    const Sphere& s = spheres[prim[i].objectIndex];
-                    pMin = s.m_center[axis] - s.m_radius;
-                    pMax = s.m_center[axis] + s.m_radius;
-                    break;
-                }
-                case PrimitiveType::Triangle: {
-                    /*
-                    prendre les 3 sommets
-                    pMin = min(v0, v1, v2)[axis]
-                    pMax = max(v0, v1, v2)[axis]
-                    */
-                    const Square& t = squares[prim[i].objectIndex];
-                    pMin = std::min({ t.vertices[0].position[axis],
-                                    t.vertices[1].position[axis],
-                                    t.vertices[2].position[axis]});
-
-                    pMax = std::max({ t.vertices[0].position[axis],
-                                    t.vertices[1].position[axis],
-                                    t.vertices[2].position[axis]});
-                    break;
-                }
-                default: // Mesh
-                    /*
-                    utiliser son AABB pré-calculée
-                    prendre min/max sur l’axe
-                    */
-                    const Mesh& m = meshes[prim[i].objectIndex];
-                    
-                    // Initialiser pMin et pMax
-                    pMin =  std::numeric_limits<float>::infinity();
-                    pMax = -std::numeric_limits<float>::infinity();
-
-                    // Parcourir tous les vertices pour trouver min/max sur l'axe choisi
-                    for (int v = 0; v < m.vertices.size(); v++) {
-                        float val = m.vertices[v].position[axis];
-                        if (val < pMin) pMin = val;
-                        if (val > pMax) pMax = val;
-                    }
-
-                    break;
-            }
-
-            // Répartition des primitives
-            if (pMax <= n->cuttingPos) {
-                leftPrimitives.push_back(prim[i]);
-            } else if (pMin >= n->cuttingPos) {
-                rightPrimitives.push_back(prim[i]);
-            } else {
-                // la primitive traverse la coupe → ajouter aux deux
-                leftPrimitives.push_back(prim[i]);
-                rightPrimitives.push_back(prim[i]);
-            }
-        }
-
-        // Gestion des cas dégénérés
-        bool degenerate = false;
-
-        // Cas 1 : aucune séparation réelle
-        if (leftPrimitives.size() == prim.size() || rightPrimitives.size() == prim.size()) {
-            degenerate = true;
-        }
-
-        // Cas 2 : une des listes est vide
-        if (leftPrimitives.empty() || rightPrimitives.empty()) {
-            degenerate = true;
-        }
-
-        // Cas 3 : duplication totale
-        if (leftPrimitives == prim && rightPrimitives == prim) {
-            degenerate = true;
-        }
-
-        // Si partition dégénérée → créer une feuille
-        if (degenerate) {
-            n->leaf = true;
-            n->primitives = prim;
-            return n;
-        }
-
-        n->leftChild  = buildNode(aabbLeftChild, leftPrimitives, scene, depth + 1);
-        n->rightChild = buildNode(aabbRightChild, rightPrimitives, scene, depth + 1);
-
-        return n;
-    }
-
-    bool intersectNode(Node* node, const Scene& scene, const Ray& ray, float t_entry, float t_exit, Hit& hit) const {
-        int axis = node->splittingAxis;
-        // Feuille
-        if (node->leaf) {
-            bool hitSomething = false;
-            for (const PrimitiveRef& p : node->primitives) {
-                Hit tempHit;
-                if (intersectPrimitive(p, scene, ray, tempHit)) {
-                    hitSomething = true;
-                    if (!hit.hit || tempHit.t < hit.t) {
-                        hit = tempHit;
-                    }
-                }
-            }
-            return hitSomething;
-        }
-        
-        //Noeud interne
-
-        //Calcul de t_split (la valeur de t pour laquelle le rayon coupe ce plan)
-        //t_split sert à savoir si, quand et dans quel ordre le rayon traverse les deux enfants du KD-tree.
-        //Est-ce que le rayon passe du premier enfant au second avant ou après avoir quitté le nœud ?
-        float t_split = (node->cuttingPos - ray.origin()[axis]) / ray.direction()[axis];
-        /*
-        Quand tu testes l’intersection du rayon avec l’AABB du nœud, tu obtiens :
-            t_entry → entrée dans la boîte
-            t_exit → sortie de la boîte
-
-        Donc le rayon n’existe dans ce nœud que pour :
-            t∈[t_entry,t_exit]
-        */
-        /* Étape 2 : définir :
-            near child
-            far child
-
-            if (ray.direction()[axis] >= 0) {
-                near = leftChild;
-                far  = rightChild;
-            } else {
-                near = rightChild;
-                far  = leftChild;
-            }
-
-            Parce que :
-                leftChild = coordonnées plus petites
-                rightChild = coordonnées plus grandes
-
-            Si tu avances vers les valeurs croissantes (D > 0) :
-                tu touches d’abord la zone des petites valeurs
-
-            Si tu avances vers les valeurs décroissantes (D < 0) :
-                tu touches d’abord la zone des grandes valeurs
-
-        */
-
-        Node* nearChild;
-        Node* farChild;
-
-        if (ray.direction()[axis] >= 0) {
-            nearChild = node->leftChild;
-            farChild  = node->rightChild;
-        } else {
-            nearChild = node->rightChild;
-            farChild  = node->leftChild;
-        }
-
-        // Étape 3 : tester les cas
-
-        // Cas 1 : Le rayon est déjà du bon côté dès qu’il entre dans le nœud (t_split <= t_entry)
-        if(t_split <= t_entry){
-            return intersectNode(farChild, scene, ray, t_entry, t_exit, hit);
-        }
-        // Cas 2 : Le rayon quitte le nœud avant de traverser le plan de coupe (t_split >= t_exit)
-        else if(t_split >= t_exit){
-            return intersectNode(nearChild, scene, ray, t_entry, t_exit, hit);
-        }
-        // Cas 3 : Le rayon traverse le plan de séparation (t_entry < t_split < t_exit)
-        else{
-            // Tester d’abord le near child
-            bool hitNear = intersectNode(nearChild, scene, ray, t_entry, t_split, hit);
-            bool hitFar = false;
-            // Si on a touché quelque chose dans le near child et que c’est avant t_split
-            if (!hitNear || hit.t > t_split) {
-                hitFar = intersectNode(farChild, scene, ray, t_split, t_exit, hit);
-            }
-            
-            return hitNear || hitFar;
-        }
-    }
-};
-
 
 
 void initialize_quad_light(Light &light, float width, float height) {
@@ -677,10 +88,17 @@ class Scene {
     std::vector< Square > squares;
     std::vector< Light > lights;
 
+    KDTree kdtree;      // Ajout du KDTree dans la scene
+    AABB aabbGlobal;    // Global bounding box
+
 public:
 
 
     Scene() {
+        // Initialisation des paramètres du KDTree
+        kdtree.maxDepth = 20;               // Profondeur maximale
+        kdtree.maxPrimitivesPerLeaf = 5;    // Nombre max de primitives par feuille
+        kdtree.epsilon = 0.01f;             // Taille minimale
     }
 
     const std::vector<Mesh>& getMeshes() const;
@@ -688,6 +106,10 @@ public:
     const std::vector<Sphere>& getSpheres() const;
 
     const std::vector<Square>& getSquares() const;
+
+    void buildKDTree(){
+        kdtree.buildKDTree(*this);
+    }
 
     void draw() {
         // iterer sur l'ensemble des objets, et faire leur rendu :
@@ -706,6 +128,150 @@ public:
     }
 
 
+/* ANCIEN CODE 
+    void initialize_AABB(const Scene& scene, AABB& aabb) {
+        const std::vector<Mesh>& meshes = scene.getMeshes();
+        const std::vector<Square>& squares = scene.getSquares();
+        const std::vector<Sphere>& spheres = scene.getSpheres();
+
+        for(int i = 0; i < meshes.size(); i++ ){
+            for(int y = 0; y < meshes[i].vertices.size(); y++){
+
+                // X Axis
+                if(meshes[i].vertices[y].position[0] < aabb.minCoor[0]){
+                    aabb.minCoor[0] = meshes[i].vertices[y].position[0];
+                }
+                if(meshes[i].vertices[y].position[0] > aabb.maxCoor[0]){
+                    aabb.maxCoor[0] = meshes[i].vertices[y].position[0];
+                }
+
+                // Y Axis
+                if(meshes[i].vertices[y].position[1] < aabb.minCoor[1]){
+                    aabb.minCoor[1] = meshes[i].vertices[y].position[1];
+                }
+                if(meshes[i].vertices[y].position[1] > aabb.maxCoor[1]){
+                    aabb.maxCoor[1] = meshes[i].vertices[y].position[1];
+                }
+
+                // Z Axis
+                if(meshes[i].vertices[y].position[2] < aabb.minCoor[2]){
+                    aabb.minCoor[2] = meshes[i].vertices[y].position[2];
+                }
+                if(meshes[i].vertices[y].position[2] > aabb.maxCoor[2]){
+                    aabb.maxCoor[2] = meshes[i].vertices[y].position[2];
+                }
+            }
+        }
+
+        for(int i = 0; i < squares.size(); i++){
+            for (int y = 0; y < squares[i].vertices.size(); y++){
+
+                // Axis X
+                if(squares[i].vertices[y].position[0] < aabb.minCoor[0]){
+                    aabb.minCoor[0] = squares[i].vertices[y].position[0];
+                }
+                if(squares[i].vertices[y].position[0] > aabb.maxCoor[0]){
+                    aabb.maxCoor[0] = squares[i].vertices[y].position[0];
+                }
+
+                // Axis Y
+                if(squares[i].vertices[y].position[1] < aabb.minCoor[1]){
+                    aabb.minCoor[1] = squares[i].vertices[y].position[1];
+                }
+                if(squares[i].vertices[y].position[1] > aabb.maxCoor[1]){
+                    aabb.maxCoor[1] = squares[i].vertices[y].position[1];
+                }
+
+                // Axis Z
+                if(squares[i].vertices[y].position[2] < aabb.minCoor[2]){
+                    aabb.minCoor[2] = squares[i].vertices[y].position[2];
+                }
+                if(squares[i].vertices[y].position[2] > aabb.maxCoor[2]){
+                    aabb.maxCoor[2] = squares[i].vertices[y].position[2];
+                }
+            }
+        }
+
+        for(int i = 0; i < spheres.size(); i++){
+            Vec3 minSph;
+            minSph[0] = spheres[i].m_center[0] - spheres[i].m_radius;
+            minSph[1] = spheres[i].m_center[1] - spheres[i].m_radius;
+            minSph[2] = spheres[i].m_center[2] - spheres[i].m_radius;
+
+            Vec3 maxSph;
+            maxSph[0] = spheres[i].m_center[0] + spheres[i].m_radius;
+            maxSph[1] = spheres[i].m_center[1] + spheres[i].m_radius;
+            maxSph[2] = spheres[i].m_center[2] + spheres[i].m_radius;
+
+            // Axis X
+            if(minSph[0] < aabb.minCoor[0]){
+                aabb.minCoor[0] = minSph[0];
+            }
+            if(maxSph[0] > aabb.maxCoor[0]){
+                aabb.maxCoor[0] = maxSph[0];
+            }
+
+            // Axis Y
+            if(minSph[1] < aabb.minCoor[1]){
+                aabb.minCoor[1] = minSph[1];
+            }
+            if(maxSph[1] > aabb.maxCoor[1]){
+                aabb.maxCoor[1] = maxSph[1];
+            }
+
+            // Axis Z
+            if(minSph[2] < aabb.minCoor[2]){
+                aabb.minCoor[2] = minSph[2];
+            }
+            if(maxSph[2] > aabb.maxCoor[2]){
+                aabb.maxCoor[2] = maxSph[2];
+            }
+        }
+    }
+*/
+
+
+    //computeIntersection : version avec KDTree
+    RaySceneIntersection computeIntersection(Ray const & ray) {
+        RaySceneIntersection result;
+        Hit hit;
+
+        // AABB globale de la scene
+        AABB globalAABB;
+        globalAABB.initialize_AABB(*this);
+
+        // Intersection avec le KDTree
+        if (kdtree.intersectNode(kdtree.root, *this, ray, -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(), hit)) {
+            result.intersectionExists = true;
+            result.t = hit.t;
+            result.objectIndex = hit.primitive.objectIndex;
+
+            switch(hit.primitive.type) {
+                case PrimitiveType::Sphere:
+                    result.typeOfIntersectedObject = 1;
+                    result.raySphereIntersection.intersection = hit.position;
+                    result.raySphereIntersection.normal = hit.normal;
+                    result.raySphereIntersection.t = hit.t;
+                    break;
+                case PrimitiveType::Triangle:
+                    result.typeOfIntersectedObject = 2;
+                    result.raySquareIntersection.intersection = hit.position;
+                    result.raySquareIntersection.normal = hit.normal;
+                    result.raySquareIntersection.t = hit.t;
+                    break;
+                case PrimitiveType::Mesh:
+                    result.typeOfIntersectedObject = 0;
+                    result.rayMeshIntersection.intersection = hit.position;
+                    result.rayMeshIntersection.normal = hit.normal;
+                    result.rayMeshIntersection.t = hit.t;
+                    break;
+            }
+        }
+
+        return result;
+    }
+
+/* computeIntersection : version sans KDTree
     RaySceneIntersection computeIntersection(Ray const & ray) {
         RaySceneIntersection result;
         //TODO calculer les intersections avec les objets de la scene et garder la plus proche
@@ -745,7 +311,7 @@ public:
 
         return result;
     }
-
+*/
 
 //-------------------------Eclairage Phong et ombres ------------------------------------
 

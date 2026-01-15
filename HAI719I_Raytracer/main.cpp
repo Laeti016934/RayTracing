@@ -343,6 +343,8 @@ int main (int argc, char ** argv) {
     scenes[1].setup_single_square();
     scenes[2].setup_cornell_box();
     scenes[3].setup_cornell_box_meshes();
+    // Build KDTree for the selected scene
+    scenes[selected_scene].buildKDTree();
 
     glutMainLoop ();
     return EXIT_SUCCESS;
