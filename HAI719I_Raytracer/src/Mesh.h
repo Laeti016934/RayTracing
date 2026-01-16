@@ -8,6 +8,7 @@
 #include "Ray.h"
 #include "Triangle.h"
 #include "Material.h"
+#include "AABB.h" 
 
 #include <GL/glut.h>
 
@@ -103,6 +104,10 @@ public:
     std::vector< unsigned int > triangles_array;
 
     Material material;
+
+    AABB aabb;  // Bounding box du mesh
+
+    void computeAABB();
 
     void loadOFF (const std::string & filename);
     void recomputeNormals ();

@@ -2,6 +2,22 @@
 #include <iostream>
 #include <fstream>
 
+void Mesh::computeAABB() {
+    aabb.minCoor = Vec3( std::numeric_limits<float>::infinity(),
+                         std::numeric_limits<float>::infinity(),
+                         std::numeric_limits<float>::infinity() );
+    aabb.maxCoor = Vec3( -std::numeric_limits<float>::infinity(),
+                         -std::numeric_limits<float>::infinity(),
+                         -std::numeric_limits<float>::infinity() );
+
+    for (const auto& v : vertices) {
+        for (int i=0; i<3; i++){
+            if (v.position[i] < aabb.minCoor[i]) aabb.minCoor[i] = v.position[i];
+            if (v.position[i] > aabb.maxCoor[i]) aabb.maxCoor[i] = v.position[i];
+        }
+    }
+}
+
 void Mesh::loadOFF (const std::string & filename) {
     std::ifstream in (filename.c_str ());
     if (!in)

@@ -95,8 +95,8 @@ public:
 
     Scene() {
         // Initialisation des paramètres du KDTree
-        kdtree.setMaxDepth(20);               // Profondeur maximale
-        kdtree.setMaxPrimitivesPerLeaf(35);    // Nombre max de primitives par feuille
+        kdtree.setMaxDepth(15);               // Profondeur maximale
+        kdtree.setMaxPrimitivesPerLeaf(30);    // Nombre max de primitives par feuille
         kdtree.setEpsilon(0.01f);             // Taille minimale
         aabbGlobal = computeGlobalAABB();
     }

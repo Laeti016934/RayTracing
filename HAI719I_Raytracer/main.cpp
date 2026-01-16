@@ -343,6 +343,12 @@ int main (int argc, char ** argv) {
     scenes[1].setup_single_square();
     scenes[2].setup_cornell_box();
     scenes[3].setup_cornell_box_meshes();
+
+    // Parcourir tous les meshes de la scène sélectionnée pour calculer leur AABB
+    for (auto& mesh : scenes[selected_scene].getMeshes()) {
+        mesh.computeAABB();
+    }
+
     // Build KDTree for the selected scene
     scenes[selected_scene].buildKDTree();
 

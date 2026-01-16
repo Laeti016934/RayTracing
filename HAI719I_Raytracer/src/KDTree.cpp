@@ -17,9 +17,9 @@ Node::Node()
 
 KDTree::KDTree()
     : root(nullptr),
-      maxDepth(20),
-      maxPrimitivesPerLeaf(35),
-      epsilon(1e-3f)
+      maxDepth(15),
+      maxPrimitivesPerLeaf(30),
+      epsilon(0.01f)
 {}
 
 KDTree::~KDTree() {
@@ -66,6 +66,8 @@ float KDTree::getEpsilon(){
     return epsilon;
 }
 
+/*
+// buildNode : V1
 Node* KDTree::buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene& scene, int depth){
     Node* n = new Node();
     n->boundingBox = aabb;
@@ -140,11 +142,11 @@ Node* KDTree::buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene
     std::vector<Sphere> const& spheres = scene.getSpheres();
 
     for(int i = 0; i < prim.size(); i++){
-            /*
-            calculer pMin (sa borne minimale sur l’axe de coupe), pMax (sa borne maximale sur l’axe de coupe)
-            tester les trois cas
-            ajouter la primitive à la/les bonne(s) liste(s)
-            */
+            
+            //calculer pMin (sa borne minimale sur l’axe de coupe), pMax (sa borne maximale sur l’axe de coupe)
+            //tester les trois cas
+            //ajouter la primitive à la/les bonne(s) liste(s)
+            
 
         // Calculs de pMin et pMax 
         float pMin, pMax;
@@ -152,21 +154,21 @@ Node* KDTree::buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene
 
         switch (prim[i].type) {
             case PrimitiveType::Sphere: {
-                    /*
-                    pMin = center[axis] - radius
-                    pMax = center[axis] + radius
-                    */
+                    
+                    //pMin = center[axis] - radius
+                    //pMax = center[axis] + radius
+                    
                 const Sphere& s = spheres[prim[i].objectIndex];
                 pMin = s.m_center[axis] - s.m_radius;
                 pMax = s.m_center[axis] + s.m_radius;
                 break;
             }
             case PrimitiveType::Triangle: {
-                    /*
-                    prendre les 3 sommets
-                    pMin = min(v0, v1, v2)[axis]
-                    pMax = max(v0, v1, v2)[axis]
-                    */
+                    
+                    //prendre les 3 sommets
+                    //pMin = min(v0, v1, v2)[axis]
+                    //pMax = max(v0, v1, v2)[axis]
+                    
                 const Square& t = squares[prim[i].objectIndex];
                 pMin = std::min({ t.vertices[0].position[axis],
                                   t.vertices[1].position[axis],
@@ -178,10 +180,10 @@ Node* KDTree::buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene
                 break;
             }
             default: // Mesh
-                    /*
-                    utiliser son AABB pré-calculée
-                    prendre min/max sur l’axe
-                    */
+                    
+                    //utiliser son AABB pré-calculée
+                    //prendre min/max sur l’axe
+                    
                 const Mesh& m = meshes[prim[i].objectIndex];
                     
                 // Initialiser pMin et pMax
@@ -240,6 +242,236 @@ Node* KDTree::buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene
 
     return n;
 }
+*/
+
+/*
+// buildNode : V2
+Node* KDTree::buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene& scene, int depth){
+    Node* n = new Node();
+    n->boundingBox = aabb;
+
+    // Si trop peu de primitives ou profondeur max atteinte, on crée une feuille
+    if (prim.size() <= maxPrimitivesPerLeaf || depth >= maxDepth) {
+        n->isLeaf = true;
+        n->primitives = prim;
+        return n;
+    }
+
+    // Axe de coupe = axe le plus long
+    float sizeX = aabb.maxCoor[0] - aabb.minCoor[0];
+    float sizeY = aabb.maxCoor[1] - aabb.minCoor[1];
+    float sizeZ = aabb.maxCoor[2] - aabb.minCoor[2];
+
+    if (std::max({sizeX, sizeY, sizeZ}) < epsilon) { // feuille trop petite
+        n->isLeaf = true;
+        n->primitives = prim;
+        return n;
+    }
+
+    int axis = 0;
+    if (sizeY >= sizeX && sizeY >= sizeZ) axis = 1;
+    else if (sizeZ >= sizeX && sizeZ >= sizeY) axis = 2;
+    n->splittingAxis = axis;
+
+    // ---------------- SAH-lite : coupe selon le centre de gravité des primitives ----------------
+    float cutPos = 0.f;
+    {
+        // calculer le centre moyen des primitives sur l'axe
+        for (const auto& p : prim) {
+            switch (p.type) {
+                case PrimitiveType::Sphere:
+                    cutPos += scene.getSpheres()[p.objectIndex].m_center[axis];
+                    break;
+                case PrimitiveType::Triangle:
+                    cutPos += (scene.getSquares()[p.objectIndex].vertices[0].position[axis] +
+                               scene.getSquares()[p.objectIndex].vertices[1].position[axis] +
+                               scene.getSquares()[p.objectIndex].vertices[2].position[axis]) / 3.0f;
+                    break;
+                case PrimitiveType::Mesh: {
+                    const Mesh& m = scene.getMeshes()[p.objectIndex];
+                    float sum = 0.f;
+                    for (const auto& v : m.vertices) sum += v.position[axis];
+                    cutPos += sum / m.vertices.size();
+                    break;
+                }
+            }
+        }
+        cutPos /= prim.size(); // centre moyen
+    }
+    n->cuttingPos = cutPos;
+
+    // ---------------- Répartition des primitives ----------------
+    std::vector<PrimitiveRef> leftPrimitives, rightPrimitives;
+    for (const auto& p : prim) {
+        float pMin, pMax;
+
+        switch (p.type) {
+            case PrimitiveType::Sphere: {
+                const Sphere& s = scene.getSpheres()[p.objectIndex];
+                pMin = s.m_center[axis] - s.m_radius;
+                pMax = s.m_center[axis] + s.m_radius;
+                break;
+            }
+            case PrimitiveType::Triangle: {
+                const Square& t = scene.getSquares()[p.objectIndex];
+                pMin = std::min({ t.vertices[0].position[axis], t.vertices[1].position[axis], t.vertices[2].position[axis] });
+                pMax = std::max({ t.vertices[0].position[axis], t.vertices[1].position[axis], t.vertices[2].position[axis] });
+                break;
+            }
+            case PrimitiveType::Mesh: {
+                const Mesh& m = scene.getMeshes()[p.objectIndex];
+                pMin = std::numeric_limits<float>::infinity();
+                pMax = -std::numeric_limits<float>::infinity();
+                for (const auto& v : m.vertices) {
+                    float val = v.position[axis];
+                    if (val < pMin) pMin = val;
+                    if (val > pMax) pMax = val;
+                }
+                break;
+            }
+        }
+
+        // --------- assigner selon le centre, pas la duplication ---------
+        float center = (pMin + pMax) / 2.0f;
+        if (center <= cutPos) leftPrimitives.push_back(p);
+        else rightPrimitives.push_back(p);
+    }
+
+    // Si partition dégénérée → feuille
+    if (leftPrimitives.empty() || rightPrimitives.empty()) {
+        n->isLeaf = true;
+        n->primitives = prim;
+        return n;
+    }
+
+    n->isLeaf = false;
+
+    // Construction récursive
+    AABB aabbLeft = aabb;
+    aabbLeft.maxCoor[axis] = cutPos;
+    AABB aabbRight = aabb;
+    aabbRight.minCoor[axis] = cutPos;
+
+    n->leftChild  = buildNode(aabbLeft, leftPrimitives, scene, depth + 1);
+    n->rightChild = buildNode(aabbRight, rightPrimitives, scene, depth + 1);
+
+    return n;
+}
+*/
+
+// buildNode : V3
+Node* KDTree::buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene& scene, int depth){
+    Node* n = new Node();
+    n->boundingBox = aabb;
+
+    // Feuille si primitives peu nombreuses ou profondeur max atteinte
+    if (prim.size() <= maxPrimitivesPerLeaf || depth >= maxDepth) {
+        n->isLeaf = true;
+        n->primitives = prim;
+        return n;
+    }
+
+    // Axe le plus long
+    float sizeX = aabb.maxCoor[0] - aabb.minCoor[0];
+    float sizeY = aabb.maxCoor[1] - aabb.minCoor[1];
+    float sizeZ = aabb.maxCoor[2] - aabb.minCoor[2];
+
+    if (std::max({sizeX, sizeY, sizeZ}) < epsilon) { // nœud trop petit
+        n->isLeaf = true;
+        n->primitives = prim;
+        return n;
+    }
+
+    int axis = 0;
+    if (sizeY >= sizeX && sizeY >= sizeZ) axis = 1;
+    else if (sizeZ >= sizeX && sizeZ >= sizeY) axis = 2;
+    n->splittingAxis = axis;
+
+    // ---------------- SAH simplifié : trouver centre moyen des AABB ----------------
+    float cutPos = 0.f;
+    for (const auto& p : prim) {
+        AABB primAABB;
+        switch (p.type) {
+            case PrimitiveType::Sphere: {
+                const Sphere& s = scene.getSpheres()[p.objectIndex];
+                primAABB.minCoor = s.m_center - Vec3(s.m_radius, s.m_radius, s.m_radius);
+                primAABB.maxCoor = s.m_center + Vec3(s.m_radius, s.m_radius, s.m_radius);
+                break;
+            }
+            case PrimitiveType::Triangle: {
+                const Square& t = scene.getSquares()[p.objectIndex];
+                primAABB.minCoor = primAABB.maxCoor = t.vertices[0].position;
+                for (int v=1; v<3; v++){
+                    for (int d=0; d<3; d++){
+                        if (t.vertices[v].position[d] < primAABB.minCoor[d]) primAABB.minCoor[d] = t.vertices[v].position[d];
+                        if (t.vertices[v].position[d] > primAABB.maxCoor[d]) primAABB.maxCoor[d] = t.vertices[v].position[d];
+                    }
+                }
+                break;
+            }
+            case PrimitiveType::Mesh: {
+                primAABB = scene.getMeshes()[p.objectIndex].aabb; // AABB précalculée
+                break;
+            }
+        }
+        cutPos += (primAABB.minCoor[axis] + primAABB.maxCoor[axis]) * 0.5f; // centre de la primitive
+    }
+    cutPos /= prim.size();
+    n->cuttingPos = cutPos;
+
+    // ---------------- Partitionnement ----------------
+    std::vector<PrimitiveRef> leftPrimitives, rightPrimitives;
+    for (const auto& p : prim) {
+        AABB primAABB;
+        switch (p.type) {
+            case PrimitiveType::Sphere: {
+                const Sphere& s = scene.getSpheres()[p.objectIndex];
+                primAABB.minCoor = s.m_center - Vec3(s.m_radius, s.m_radius, s.m_radius);
+                primAABB.maxCoor = s.m_center + Vec3(s.m_radius, s.m_radius, s.m_radius);
+                break;
+            }
+            case PrimitiveType::Triangle: {
+                const Square& t = scene.getSquares()[p.objectIndex];
+                primAABB.minCoor = primAABB.maxCoor = t.vertices[0].position;
+                for (int v=1; v<3; v++){
+                    for (int d=0; d<3; d++){
+                        if (t.vertices[v].position[d] < primAABB.minCoor[d]) primAABB.minCoor[d] = t.vertices[v].position[d];
+                        if (t.vertices[v].position[d] > primAABB.maxCoor[d]) primAABB.maxCoor[d] = t.vertices[v].position[d];
+                    }
+                }
+                break;
+            }
+            case PrimitiveType::Mesh:
+                primAABB = scene.getMeshes()[p.objectIndex].aabb;
+                break;
+        }
+
+        // placer selon le centre de l'AABB
+        float center = 0.5f * (primAABB.minCoor[axis] + primAABB.maxCoor[axis]);
+        if (center <= cutPos) leftPrimitives.push_back(p);
+        else rightPrimitives.push_back(p);
+    }
+
+    // Si partition dégénérée → feuille
+    if (leftPrimitives.empty() || rightPrimitives.empty()) {
+        n->isLeaf = true;
+        n->primitives = prim;
+        return n;
+    }
+
+    // Construction récursive des enfants
+    n->isLeaf = false;
+    AABB aabbLeft = aabb;
+    aabbLeft.maxCoor[axis] = cutPos;
+    AABB aabbRight = aabb;
+    aabbRight.minCoor[axis] = cutPos;
+
+    n->leftChild  = buildNode(aabbLeft, leftPrimitives, scene, depth+1);
+    n->rightChild = buildNode(aabbRight, rightPrimitives, scene, depth+1);
+
+    return n;
+}
+
 
 
 void KDTree::buildKDTree(const Scene& scene){
