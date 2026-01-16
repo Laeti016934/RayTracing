@@ -7,8 +7,6 @@
 #include "Ray.h"
 #include "Vec3.h"
 
-class Scene;   // forward declaration
-
 struct AABB{
     Vec3 maxCoor;
     Vec3 minCoor;
@@ -29,10 +27,7 @@ struct AABB{
 
     void expandByPoint(const Vec3& p);
 
-    void initializeFromScene(const Scene& scene);
-
-    bool intersectRayAABB(const Ray& ray, const AABB& aabb,
-                        float& t_entry, float& t_exit)
+    bool intersectRayAABB(const Ray& ray, float& t_entry, float& t_exit)
     {
         // Intervalle global du rayon
         t_entry = -std::numeric_limits<float>::infinity();
@@ -43,8 +38,8 @@ struct AABB{
 
             float o = ray.origin()[axis];
             float d = ray.direction()[axis];
-            float minA = aabb.minCoor[axis];
-            float maxA = aabb.maxCoor[axis];
+            float minA = minCoor[axis];
+            float maxA = maxCoor[axis];
 
             // Rayon parallèle aux plans de la slab
             if (std::abs(d) < 1e-8f) {
@@ -87,33 +82,5 @@ inline void AABB::expandByPoint(const Vec3& p) {
     maxCoor[1] = std::max(maxCoor[1], p[1]);
     maxCoor[2] = std::max(maxCoor[2], p[2]);
 }
-
-//TODO pas encore bon, scene n'est pas reconnue
-void AABB::initializeFromScene(const Scene& scene) {
-    // Meshes
-    for (const Mesh& m : scene.getMeshes()) {
-        for (const auto& v : m.vertices) {
-            expandByPoint(v.position);
-        }
-    }
-
-    // Squares
-    for (const Square& s : scene.getSquares()) {
-        for (const auto& v : s.vertices) {
-            expandByPoint(v.position);
-        }
-    }
-
-    // Spheres
-    for (const Sphere& sp : scene.getSpheres()) {
-        Vec3 minS = sp.m_center - Vec3(sp.m_radius);
-        Vec3 maxS = sp.m_center + Vec3(sp.m_radius);
-
-        expandByPoint(minS);
-        expandByPoint(maxS);
-    }
-}
-
     
-
 #endif

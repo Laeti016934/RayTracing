@@ -1,5 +1,70 @@
 #include "KDTree.h"
 #include "Scene.h"
+#include <algorithm>
+#include <limits>
+#include <cmath>
+
+// ---------------- Node ----------------
+
+Node::Node()
+    : splittingAxis(-1),
+      cuttingPos(0.f),
+      leftChild(nullptr),
+      rightChild(nullptr),
+      isLeaf(false) {}
+
+// ---------------- KDTree ----------------
+
+KDTree::KDTree()
+    : root(nullptr),
+      maxDepth(20),
+      maxPrimitivesPerLeaf(35),
+      epsilon(1e-3f)
+{}
+
+KDTree::~KDTree() {
+    deleteNode(root);
+    root = nullptr;
+}
+
+void KDTree::deleteNode(Node* node){
+    if (!node) return;
+    deleteNode(node->leftChild);
+    deleteNode(node->rightChild);
+    delete node;
+}
+
+void KDTree::setRoot(Node* _root){
+    root = _root;
+}
+
+Node* KDTree::getRoot(){
+    return root;
+}
+
+void KDTree::setMaxDepth(int _maxDepth){
+    maxDepth = _maxDepth;
+}
+
+int KDTree::getMaxDepth(){
+    return maxDepth;
+}
+
+void KDTree::setMaxPrimitivesPerLeaf(int _maxPrimitivesPerLeaf){
+    maxPrimitivesPerLeaf = _maxPrimitivesPerLeaf;
+}
+
+int KDTree::getMaxPrimitivesPerLeaf(){
+    return maxPrimitivesPerLeaf;
+}
+
+void KDTree::setEpsilon(float _epsilon){
+    epsilon = _epsilon;
+}
+
+float KDTree::getEpsilon(){
+    return epsilon;
+}
 
 Node* KDTree::buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene& scene, int depth){
     Node* n = new Node();
@@ -21,7 +86,7 @@ Node* KDTree::buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene
     float sizeX = aabb.maxCoor[0] - aabb.minCoor[0];
     float sizeY = aabb.maxCoor[1] - aabb.minCoor[1];
     float sizeZ = aabb.maxCoor[2] - aabb.minCoor[2];
-    float aabbSize = max(sizeX, sizeY, sizeZ);
+    float aabbSize = std::max({sizeX, sizeY, sizeZ});
 
     if(aabbSize < epsilon){
         n->isLeaf = true;
@@ -178,6 +243,9 @@ Node* KDTree::buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene
 
 
 void KDTree::buildKDTree(const Scene& scene){
+    deleteNode(root);
+    root = nullptr;
+
     // Récupération des primitives
     std::vector<PrimitiveRef> allPrimitives;
 
@@ -212,8 +280,7 @@ void KDTree::buildKDTree(const Scene& scene){
     }
 
     // AABB globale de la scene
-    AABB globalAABB;
-    globalAABB.initialize_AABB(scene);
+    AABB globalAABB = scene.computeGlobalAABB();
 
     // Construction récursive du KDTree
     root = buildNode(globalAABB, allPrimitives, scene, 0);
@@ -221,18 +288,22 @@ void KDTree::buildKDTree(const Scene& scene){
 
 
 bool KDTree::intersectPrimitive(const PrimitiveRef& prim, const Scene& scene, const Ray& ray, Hit& hit) const {
-    bool hitRes = false;
+    
     switch (prim.type) {
+
         case PrimitiveType::Sphere: {
             const Sphere& s = scene.getSpheres()[prim.objectIndex];
             RaySphereIntersection res = s.intersect(ray);
-            hitRes = res.intersectionExists;
-            if (hitRes) {
-                hit.hit = true;
-                hit.t = res.t;
-                hit.position = res.intersection;
-                hit.normal = res.normal;
-                hit.primitive = prim;
+
+            if (res.intersectionExists) {
+                if (!hit.hit || res.t < hit.t) {
+                    hit.hit = true;
+                    hit.t = res.t;
+                    hit.position = res.intersection;
+                    hit.normal = res.normal;
+                    hit.primitive = prim;
+                }
+                return true;
             }
             break;
         }
@@ -240,13 +311,16 @@ bool KDTree::intersectPrimitive(const PrimitiveRef& prim, const Scene& scene, co
         case PrimitiveType::Triangle: {
             const Square& sq = scene.getSquares()[prim.objectIndex];
             RaySquareIntersection res = sq.intersect(ray);
-            hitRes = res.intersectionExists;
-            if (hitRes) {
-                hit.hit = true;
-                hit.t = res.t;
-                hit.position = res.intersection;
-                hit.normal = res.normal;
-                hit.primitive = prim;
+
+            if (res.intersectionExists) {
+                if (!hit.hit || res.t < hit.t) {
+                    hit.hit = true;
+                    hit.t = res.t;
+                    hit.position = res.intersection;
+                    hit.normal = res.normal;
+                    hit.primitive = prim;
+                }
+                return true;
             }
             break;
         }
@@ -254,18 +328,22 @@ bool KDTree::intersectPrimitive(const PrimitiveRef& prim, const Scene& scene, co
         case PrimitiveType::Mesh: {
             const Mesh& m = scene.getMeshes()[prim.objectIndex];
             RayTriangleIntersection res = m.intersect(ray);
-            hitRes = res.intersectionExists;
-            if (hitRes) {
-                hit.hit = true;
-                hit.t = res.t;
-                hit.position = res.intersection;
-                hit.normal = res.normal;
-                hit.primitive = prim;
+
+            if (res.intersectionExists) {
+                if (!hit.hit || res.t < hit.t) {
+                    hit.hit = true;
+                    hit.t = res.t;
+                    hit.position = res.intersection;
+                    hit.normal = res.normal;
+                    hit.primitive = prim;
+                }
+                return true;
             }
             break;
         }
     }
-    return hitRes;
+
+    return false;
 }
     
 
@@ -364,4 +442,14 @@ bool KDTree::intersectNode(Node* node, const Scene& scene, const Ray& ray, float
         
         return hitNear || hitFar;
     }
+}
+
+bool KDTree::intersect(const Scene& scene, const Ray& ray, Hit& hit) const {
+    float tEntry, tExit;
+    if (!root) return false;
+
+    if (!root->boundingBox.intersectRayAABB(ray, tEntry, tExit))
+        return false;
+
+    return intersectNode(root, scene, ray, tEntry, tExit, hit);
 }

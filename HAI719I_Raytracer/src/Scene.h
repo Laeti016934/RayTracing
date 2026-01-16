@@ -46,7 +46,7 @@ struct Light {
 };
 
 
-void initialize_quad_light(Light &light, float width, float height) {
+inline void initialize_quad_light(Light &light, float width, float height) {
     if (light.type != LightType_Quad) {
         std::cerr << "La lumière doit être de type Quad pour utiliser cette fonction." << std::endl;
         return;
@@ -81,7 +81,6 @@ struct RaySceneIntersection{
 };
 
 
-
 class Scene {
     std::vector< Mesh > meshes;
     std::vector< Sphere > spheres;
@@ -96,18 +95,22 @@ public:
 
     Scene() {
         // Initialisation des paramètres du KDTree
-        kdtree.maxDepth = 20;               // Profondeur maximale
-        kdtree.maxPrimitivesPerLeaf = 5;    // Nombre max de primitives par feuille
-        kdtree.epsilon = 0.01f;             // Taille minimale
+        kdtree.setMaxDepth(20);               // Profondeur maximale
+        kdtree.setMaxPrimitivesPerLeaf(35);    // Nombre max de primitives par feuille
+        kdtree.setEpsilon(0.01f);             // Taille minimale
+        aabbGlobal = computeGlobalAABB();
     }
 
-    const std::vector<Mesh>& getMeshes() const;
+    const std::vector<Mesh>& getMeshes() const { return meshes; }
+    const std::vector<Sphere>& getSpheres() const { return spheres; }
+    const std::vector<Square>& getSquares() const { return squares; }
 
-    const std::vector<Sphere>& getSpheres() const;
-
-    const std::vector<Square>& getSquares() const;
+    std::vector<Mesh>& getMeshes() { return meshes; }
+    std::vector<Sphere>& getSpheres() { return spheres; }
+    std::vector<Square>& getSquares() { return squares; }
 
     void buildKDTree(){
+
         kdtree.buildKDTree(*this);
     }
 
@@ -127,109 +130,40 @@ public:
         }
     }
 
+    AABB computeGlobalAABB() const {
+        AABB box;
 
-/* ANCIEN CODE 
-    void initialize_AABB(const Scene& scene, AABB& aabb) {
-        const std::vector<Mesh>& meshes = scene.getMeshes();
-        const std::vector<Square>& squares = scene.getSquares();
-        const std::vector<Sphere>& spheres = scene.getSpheres();
-
-        for(int i = 0; i < meshes.size(); i++ ){
-            for(int y = 0; y < meshes[i].vertices.size(); y++){
-
-                // X Axis
-                if(meshes[i].vertices[y].position[0] < aabb.minCoor[0]){
-                    aabb.minCoor[0] = meshes[i].vertices[y].position[0];
-                }
-                if(meshes[i].vertices[y].position[0] > aabb.maxCoor[0]){
-                    aabb.maxCoor[0] = meshes[i].vertices[y].position[0];
-                }
-
-                // Y Axis
-                if(meshes[i].vertices[y].position[1] < aabb.minCoor[1]){
-                    aabb.minCoor[1] = meshes[i].vertices[y].position[1];
-                }
-                if(meshes[i].vertices[y].position[1] > aabb.maxCoor[1]){
-                    aabb.maxCoor[1] = meshes[i].vertices[y].position[1];
-                }
-
-                // Z Axis
-                if(meshes[i].vertices[y].position[2] < aabb.minCoor[2]){
-                    aabb.minCoor[2] = meshes[i].vertices[y].position[2];
-                }
-                if(meshes[i].vertices[y].position[2] > aabb.maxCoor[2]){
-                    aabb.maxCoor[2] = meshes[i].vertices[y].position[2];
-                }
+        for (const Mesh& m : meshes) {
+            for (const auto& v : m.vertices) {
+                box.expandByPoint(v.position);
             }
         }
 
-        for(int i = 0; i < squares.size(); i++){
-            for (int y = 0; y < squares[i].vertices.size(); y++){
-
-                // Axis X
-                if(squares[i].vertices[y].position[0] < aabb.minCoor[0]){
-                    aabb.minCoor[0] = squares[i].vertices[y].position[0];
-                }
-                if(squares[i].vertices[y].position[0] > aabb.maxCoor[0]){
-                    aabb.maxCoor[0] = squares[i].vertices[y].position[0];
-                }
-
-                // Axis Y
-                if(squares[i].vertices[y].position[1] < aabb.minCoor[1]){
-                    aabb.minCoor[1] = squares[i].vertices[y].position[1];
-                }
-                if(squares[i].vertices[y].position[1] > aabb.maxCoor[1]){
-                    aabb.maxCoor[1] = squares[i].vertices[y].position[1];
-                }
-
-                // Axis Z
-                if(squares[i].vertices[y].position[2] < aabb.minCoor[2]){
-                    aabb.minCoor[2] = squares[i].vertices[y].position[2];
-                }
-                if(squares[i].vertices[y].position[2] > aabb.maxCoor[2]){
-                    aabb.maxCoor[2] = squares[i].vertices[y].position[2];
-                }
+        for (const Square& s : squares) {
+            for (const auto& v : s.vertices) {
+                box.expandByPoint(v.position);
             }
         }
 
-        for(int i = 0; i < spheres.size(); i++){
-            Vec3 minSph;
-            minSph[0] = spheres[i].m_center[0] - spheres[i].m_radius;
-            minSph[1] = spheres[i].m_center[1] - spheres[i].m_radius;
-            minSph[2] = spheres[i].m_center[2] - spheres[i].m_radius;
+        for (const Sphere& sp : spheres) {
+            Vec3 minP(
+                sp.m_center[0] - sp.m_radius,
+                sp.m_center[1] - sp.m_radius,
+                sp.m_center[2] - sp.m_radius
+            );
 
-            Vec3 maxSph;
-            maxSph[0] = spheres[i].m_center[0] + spheres[i].m_radius;
-            maxSph[1] = spheres[i].m_center[1] + spheres[i].m_radius;
-            maxSph[2] = spheres[i].m_center[2] + spheres[i].m_radius;
+            Vec3 maxP(
+                sp.m_center[0] + sp.m_radius,
+                sp.m_center[1] + sp.m_radius,
+                sp.m_center[2] + sp.m_radius
+            );
 
-            // Axis X
-            if(minSph[0] < aabb.minCoor[0]){
-                aabb.minCoor[0] = minSph[0];
-            }
-            if(maxSph[0] > aabb.maxCoor[0]){
-                aabb.maxCoor[0] = maxSph[0];
-            }
-
-            // Axis Y
-            if(minSph[1] < aabb.minCoor[1]){
-                aabb.minCoor[1] = minSph[1];
-            }
-            if(maxSph[1] > aabb.maxCoor[1]){
-                aabb.maxCoor[1] = maxSph[1];
-            }
-
-            // Axis Z
-            if(minSph[2] < aabb.minCoor[2]){
-                aabb.minCoor[2] = minSph[2];
-            }
-            if(maxSph[2] > aabb.maxCoor[2]){
-                aabb.maxCoor[2] = maxSph[2];
-            }
+            box.expandByPoint(minP);
+            box.expandByPoint(maxP);
         }
+
+        return box;
     }
-*/
-
 
     //computeIntersection : version avec KDTree
     RaySceneIntersection computeIntersection(Ray const & ray) {
@@ -237,11 +171,10 @@ public:
         Hit hit;
 
         // AABB globale de la scene
-        AABB globalAABB;
-        globalAABB.initialize_AABB(*this);
+        AABB globalAABB = aabbGlobal;
 
         // Intersection avec le KDTree
-        if (kdtree.intersectNode(kdtree.root, *this, ray, -std::numeric_limits<float>::infinity(), std::numeric_limits<float>::infinity(), hit)) {
+        if (kdtree.intersect(*this, ray, hit)) {
             result.intersectionExists = true;
             result.t = hit.t;
             result.objectIndex = hit.primitive.objectIndex;
@@ -270,8 +203,8 @@ public:
 
         return result;
     }
-
-/* computeIntersection : version sans KDTree
+/*
+// computeIntersection : version sans KDTree
     RaySceneIntersection computeIntersection(Ray const & ray) {
         RaySceneIntersection result;
         //TODO calculer les intersections avec les objets de la scene et garder la plus proche
@@ -827,6 +760,8 @@ public:
             s.material.shininess = 20;
         }
 
+        aabbGlobal = computeGlobalAABB();
+        kdtree.buildKDTree(*this);
     }
 
     void setup_single_square() {
@@ -865,6 +800,10 @@ public:
             s.material.specular_material = Vec3( 0.8,0.8,0.8 );
             s.material.shininess = 20;
         }
+
+        aabbGlobal = computeGlobalAABB();
+        kdtree.buildKDTree(*this);
+
     }
 
     void setup_cornell_box_meshes(){
@@ -985,6 +924,9 @@ public:
             std::cout << "Maillage chargé : " << offFilePath << std::endl;
         }
 
+        aabbGlobal = computeGlobalAABB();
+        kdtree.buildKDTree(*this);
+
     }
 
     void setup_cornell_box(){
@@ -1100,6 +1042,8 @@ public:
             s.material.index_medium = 1.5;
         }
         
+        aabbGlobal = computeGlobalAABB();
+        kdtree.buildKDTree(*this);
 
     }
 

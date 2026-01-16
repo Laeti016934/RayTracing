@@ -25,13 +25,7 @@ struct Node
 
     bool isLeaf; // Node State 
 
-    Node()
-        : splittingAxis(-1),
-          cuttingPos(0.f),
-          leftChild(nullptr),
-          rightChild(nullptr),
-          isLeaf(false)
-    {}
+    Node();
 };
 
 class KDTree
@@ -45,9 +39,23 @@ private:
     // Construction récursive
     Node* buildNode(AABB &aabb, std::vector<PrimitiveRef> &prim, const Scene& scene, int depth);
 
+    void deleteNode(Node* node);
+
 public:
-    KDTree(/* args */);
+    KDTree();
     ~KDTree();
+
+    void setRoot(Node* _root);
+    Node* getRoot();
+
+    void setMaxDepth(int _maxDepth);
+    int getMaxDepth();
+
+    void setMaxPrimitivesPerLeaf(int _maxPrimitivesPerLeaf);
+    int getMaxPrimitivesPerLeaf();
+
+    void setEpsilon(float _epsilon);
+    float getEpsilon();
 
     // Construction globale
     void buildKDTree(const Scene& scene);
@@ -56,18 +64,8 @@ public:
 
     bool intersectNode(Node* node, const Scene& scene, const Ray& ray, float t_entry, float t_exit, Hit& hit) const;
 
+    bool intersect(const Scene& scene, const Ray& ray, Hit& hit) const;
 };
-
-KDTree::KDTree(/* args */)
-{
-}
-
-KDTree::~KDTree()
-{
-}
-
-
-
 
 
 #endif
